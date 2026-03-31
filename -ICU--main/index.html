@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>eICU 智慧重症監護儀表板</title>
+    <meta name="description"
+        content="eICU Smart Critical Care Dashboard - Real-time patient monitoring with AI-powered predictive analytics">
+
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- 引入 React 與 ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <!-- 引入 Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        body {
+            background-color: #0B0F19;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* 危急狀態時的全局紅色呼吸邊框 */
+        @keyframes borderPulse {
+
+            0%,
+            100% {
+                box-shadow: inset 0 0 30px rgba(239, 68, 68, 0), 0 0 0 0 rgba(239, 68, 68, 0);
+            }
+
+            50% {
+                box-shadow: inset 0 0 60px rgba(239, 68, 68, 0.08), 0 0 40px 5px rgba(239, 68, 68, 0.05);
+            }
+        }
+
+        .critical-border-pulse {
+            animation: borderPulse 3s ease-in-out infinite;
+            border: 2px solid rgba(239, 68, 68, 0.15);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+        // --- 內建 SVG 圖示 ---
+        const Icons = {
+            Heart: ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" /></svg>,
+            Activity: ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>,
+            Thermometer: ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z" /></svg>,
+            Wind: ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2" /><path d="M9.6 4.6A2 2 0 1 1 11 8H2" /><path d="M12.6 19.4A2 2 0 1 0 14 16H2" /></svg>,
+            Clock: ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>,
+            Download: ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" /></svg>,
+            Brain: ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z" /><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z" /></svg>,
+            ShieldAlert: ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" /><path d="M12 8v4" /><path d="M12 16h.01" /></svg>,
+            AlertTriangle: ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>,
+            CheckCircle2: ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="m9 12 2 2 4-4" /></svg>,
+            FileText: ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><line x1="16" x2="8" y1="13" y2="13" /><line x1="16" x2="8" y1="17" y2="17" /><line x1="10" x2="8" y1="9" y2="9" /></svg>,
+            Stethoscope: ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3" /><path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4" /><circle cx="20" cy="10" r="2" /></svg>,
+            Droplets: ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 16.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S7 2.9 7 2.9s-2.29 4.26-3.29 5.16c-1.14.93-1.71 2.03-1.71 3.19C2 14.47 3.8 16.3 6 16.3Z" /><path d="M17 21c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S17 7.6 17 7.6s-2.29 4.26-3.29 5.16c-1.14.93-1.71 2.03-1.71 3.19C13 19.17 14.8 21 17 21Z" /></svg>,
+            Sparkles: ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" /><path d="M5 3v4" /><path d="M3 5h4" /></svg>,
+            RefreshCw: ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>,
+            Bell: ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></svg>,
+            Pause: ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="4" height="16" x="6" y="4" /><rect width="4" height="16" x="14" y="4" /></svg>,
+            Play: ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3" /></svg>,
+            X: ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+        };
+
+        // --- 常數與醫療閾值設定 ---
+        const THRESHOLDS = {
+            hr: { min: 60, max: 100, critMin: 50, critMax: 120 },
+            spo2: { min: 94, max: 100, critMin: 90, critMax: 100 },
+            map: { min: 65, max: 110, critMin: 55, critMax: 120 },
+            rr: { min: 12, max: 20, critMin: 8, critMax: 30 },
+            temp: { min: 36.5, max: 37.5, critMin: 35.0, critMax: 39.0 }
+        };
+
+        const getStatus = (metric, value) => {
+            const t = THRESHOLDS[metric];
+            if (value <= t.critMin || value >= t.critMax) return 'critical';
+            if (value < t.min || value > t.max) return 'warning';
+            return 'normal';
+        };
+
+        const statusColors = { normal: 'text-emerald-400', warning: 'text-amber-400', critical: 'text-rose-500' };
+        const statusBgColors = {
+            normal: 'bg-emerald-400/10 border-emerald-400/20',
+            warning: 'bg-amber-400/10 border-amber-400/20',
+            critical: 'bg-rose-500/10 border-rose-500/30'
+        };
+
+        // API Fetch 助手
+        const fetchWithRetry = async (url, options, maxRetries = 5) => {
+            let retries = 0;
+            const delays = [1000, 2000, 4000, 8000, 16000];
+            while (retries <= maxRetries) {
+                try {
+                    const r = await fetch(url, options);
+                    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                    return await r.json();
+                } catch (e) {
+                    if (retries === maxRetries) throw e;
+                    await new Promise(res => setTimeout(res, delays[retries]));
+                    retries++;
+                }
+            }
+        };
+
+        /* ── 組件：MetricCard ── */
+        const MetricCard = ({ title, value, unit, icon: Icon, metricId, trend, onClick, isSelected }) => {
+            const status = getStatus(metricId, value);
+            const colorClass = statusColors[status];
+            const bgClass = statusBgColors[status];
+            const isBlinking = status === 'critical';
+
+            return (
+                <div
+                    onClick={() => onClick && onClick(metricId)}
+                    className={`relative flex flex-col p-4 rounded-2xl border ${bgClass} transition-all duration-500 overflow-hidden cursor-pointer hover:scale-[1.02] ${isSelected ? 'ring-2 ring-indigo-500 ring-offset-2 ring-offset-[#0B0F19]' : ''}`}
+                >
+                    {status === 'critical' && <div className="absolute -top-10 -right-10 w-32 h-32 bg-rose-500/20 blur-3xl rounded-full animate-pulse" />}
+
+                    <div className="flex justify-between items-start mb-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                            <Icon className={`w-4 h-4 md:w-5 md:h-5 shrink-0 ${colorClass}`} />
+                            <span className="text-gray-400 font-medium tracking-wide text-xs md:text-sm uppercase whitespace-nowrap truncate">{title}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0 ml-1">
+                            <span className={`w-2 h-2 rounded-full ${colorClass === 'text-emerald-400' ? 'bg-emerald-400' : colorClass === 'text-amber-400' ? 'bg-amber-400' : 'bg-rose-500'} ${isBlinking ? 'animate-ping' : 'animate-pulse'}`} />
+                            <span className="hidden lg:inline text-[10px] md:text-xs text-gray-500 font-mono">LIVE</span>
+                        </div>
+                    </div>
+
+                    <div className="flex items-baseline gap-1 md:gap-2 mt-2">
+                        <span className={`text-3xl md:text-4xl lg:text-5xl font-bold tracking-tighter ${colorClass} font-mono`}>{value.toFixed(metricId === 'temp' ? 1 : 0)}</span>
+                        <span className="text-gray-500 font-semibold text-xs md:text-sm">{unit}</span>
+                    </div>
+
+                    <div className="mt-3 md:mt-4 flex items-center justify-between text-[10px] md:text-xs font-mono">
+                        <div className="flex items-center gap-1 text-gray-400">
+                            <Icons.Clock className="w-3 h-3 md:w-3.5 md:h-3.5" />
+                            <span>Trend: {trend > 0 ? '+' : ''}{trend.toFixed(1)}</span>
+                        </div>
+                        <div className="hidden xl:block text-gray-500">
+                            {THRESHOLDS[metricId].min}-{THRESHOLDS[metricId].max} {unit}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        /* ── 組件：時間序列圖表 (加入防崩潰機制) ── */
+        const CustomTimeSeriesChart = ({ data, visibleMetrics, onToggleMetric, isPaused, onTogglePause }) => {
+            if (data.length === 0) return null;
+
+            const width = 800;
+            const height = 240;
+            const padding = { top: 20, right: 150, bottom: 30, left: 50 };
+            const chartWidth = width - padding.left - padding.right;
+            const chartHeight = height - padding.top - padding.bottom;
+
+            const xStep = chartWidth / (data.length - 1 || 1);
+            const ranges = { hr: { min: 40, max: 160 }, map: { min: 30, max: 140 }, spo2: { min: 80, max: 105 } };
+            const colors = { hr: '#34D399', map: '#22D3EE', spo2: '#F59E0B' };
+
+            const activeMetrics = Object.keys(visibleMetrics).filter(k => visibleMetrics[k]);
+
+            // 安全計算 Y 軸範圍 (防呆：如果使用者把圖表線全關了)
+            const globalMin = activeMetrics.length > 0 ? Math.min(...activeMetrics.map(m => ranges[m].min)) : 0;
+            const globalMax = activeMetrics.length > 0 ? Math.max(...activeMetrics.map(m => ranges[m].max)) : 100;
+
+            const getY = (val) => {
+                if (globalMax === globalMin) return height - padding.bottom; // 避免除以零
+                return height - padding.bottom - ((val - globalMin) / (globalMax - globalMin)) * chartHeight;
+            };
+
+            const makePath = (key) => data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${padding.left + i * xStep} ${getY(d[key])}`).join(' ');
+            const lastX = padding.left + (data.length - 1) * xStep;
+            const last = data[data.length - 1];
+
+            const gridVals = [];
+            if (globalMax > globalMin) {
+                for (let v = Math.ceil(globalMin / 20) * 20; v <= globalMax; v += 20) gridVals.push(v);
+            }
+
+            return (
+                <div className="w-full overflow-x-auto overflow-y-hidden no-scrollbar bg-gray-900/50 rounded-xl border border-gray-800 p-4">
+                    <div className="flex flex-wrap items-center justify-between mb-4 px-2 gap-2 min-w-[600px]">
+                        <h3 className="text-gray-300 font-semibold flex items-center gap-2 text-sm md:text-base">
+                            <Icons.Activity className="w-4 h-4 md:w-5 md:h-5 text-indigo-400" />
+                            Physiological Waveforms
+                        </h3>
+                        <div className="flex items-center gap-3">
+                            {[{ key: 'hr', label: 'HR', c: colors.hr }, { key: 'map', label: 'MAP', c: colors.map }, { key: 'spo2', label: 'SpO₂', c: colors.spo2 }].map(m => (
+                                <button
+                                    key={m.key}
+                                    onClick={() => onToggleMetric(m.key)}
+                                    className={`flex items-center gap-1 text-[10px] md:text-xs font-mono px-2 py-1 rounded border transition-all ${visibleMetrics[m.key] ? 'border-gray-600 bg-gray-800' : 'border-gray-800 bg-gray-900 opacity-40'}`}
+                                >
+                                    <div className="w-3 h-0.5" style={{ backgroundColor: m.c }} />
+                                    {m.label}
+                                </button>
+                            ))}
+                            <button
+                                onClick={onTogglePause}
+                                className={`flex items-center gap-1 text-[10px] md:text-xs font-mono px-2.5 py-1 rounded border transition-all ${isPaused ? 'border-amber-500/50 bg-amber-500/10 text-amber-400' : 'border-gray-700 bg-gray-800 text-gray-400'}`}
+                            >
+                                {isPaused ? <Icons.Play className="w-3 h-3" /> : <Icons.Pause className="w-3 h-3" />}
+                                {isPaused ? 'Resume' : 'Pause'}
+                            </button>
+                        </div>
+                    </div>
+
+                    {activeMetrics.length === 0 ? (
+                        <div className="flex items-center justify-center h-[240px] text-gray-500 border-t border-gray-800/50 border-dashed">
+                            Please select at least one metric to display.
+                        </div>
+                    ) : (
+                        <div className="min-w-[600px]">
+                            <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto drop-shadow-lg">
+                                {gridVals.map(val => (
+                                    <g key={val}>
+                                        <line x1={padding.left} y1={getY(val)} x2={width - padding.right} y2={getY(val)} stroke="#374151" strokeWidth="1" strokeDasharray="4 4" />
+                                        <text x={padding.left - 10} y={getY(val) + 4} fill="#6B7280" fontSize="10" textAnchor="end" fontFamily="monospace">{val}</text>
+                                    </g>
+                                ))}
+
+                                <rect x={width - padding.right} y={padding.top} width={padding.right - 20} height={chartHeight} fill="#4C1D95" opacity="0.1" rx="4" />
+                                <line x1={width - padding.right} y1={padding.top} x2={width - padding.right} y2={height - padding.bottom} stroke="#8B5CF6" strokeWidth="1" strokeDasharray="4 4" />
+                                <text x={width - padding.right + 10} y={padding.top + 10} fill="#A78BFA" fontSize="10" fontFamily="sans-serif" fontWeight="bold">AI FORECAST</text>
+
+                                {activeMetrics.map(key => (
+                                    <path key={key} d={makePath(key)} fill="none" stroke={colors[key]} strokeWidth="2.5" className="transition-all duration-300" style={{ filter: `drop-shadow(0 0 8px ${colors[key]}66)` }} />
+                                ))}
+
+                                {visibleMetrics['map'] && data.map((d, i) => {
+                                    if (d.map < 65) {
+                                        const x = padding.left + i * xStep, y = getY(d.map);
+                                        return (
+                                            <g key={`a-${i}`}>
+                                                <circle cx={x} cy={y} r="4" fill="#F43F5E" className="animate-ping" style={{ animationDuration: '2s' }} />
+                                                <circle cx={x} cy={y} r="4" fill="#F43F5E" stroke="#111827" strokeWidth="2" />
+                                            </g>
+                                        )
+                                    }
+                                    return null;
+                                })}
+
+                                {activeMetrics.map(key => {
+                                    const pred = key === 'hr' ? 25 : key === 'map' ? -15 : key === 'spo2' ? -3 : 0;
+                                    return <path key={`p-${key}`} d={`M ${lastX} ${getY(last[key])} Q ${lastX + 50} ${getY(last[key] + pred / 2)} ${lastX + 130} ${getY(last[key] + pred)}`} fill="none" stroke={colors[key]} strokeWidth="2" strokeDasharray="6 4" opacity="0.6" />
+                                })}
+
+                                {data.map((d, i) => {
+                                    if (i % 10 === 0) return <text key={`t-${i}`} x={padding.left + i * xStep} y={height - 10} fill="#6B7280" fontSize="10" textAnchor="middle" fontFamily="monospace">{d.time}</text>;
+                                    return null;
+                                })}
+
+                                {isPaused && (
+                                    <g>
+                                        <rect x={width / 2 - 50} y={height / 2 - 12} width="100" height="24" rx="4" fill="#F59E0B" opacity="0.15" />
+                                        <text x={width / 2} y={height / 2 + 5} fill="#F59E0B" fontSize="12" textAnchor="middle" fontFamily="monospace" fontWeight="bold">⏸ PAUSED</text>
+                                    </g>
+                                )}
+                            </svg>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        /* ── 組件：通知中心 Notification Bell (加入一鍵已讀功能) ── */
+        const NotificationBell = ({ alerts, onMarkAllRead }) => {
+            const [open, setOpen] = useState(false);
+            const unread = alerts.filter(a => !a.read).length;
+
+            return (
+                <div className="relative">
+                    <button onClick={() => setOpen(!open)} className="relative p-2 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 transition-all">
+                        <Icons.Bell className="w-4 h-4 md:w-5 md:h-5 text-gray-300" />
+                        {unread > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 md:w-5 md:h-5 bg-rose-500 rounded-full text-[9px] md:text-[10px] font-bold flex items-center justify-center text-white animate-pulse">{unread}</span>}
+                    </button>
+
+                    {open && (
+                        <div className="absolute right-0 top-12 w-80 md:w-96 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl z-[100] overflow-hidden">
+                            <div className="p-3 border-b border-gray-800 flex justify-between items-center">
+                                <span className="text-sm font-semibold text-gray-200">Critical Alerts</span>
+                                <div className="flex items-center gap-3">
+                                    {unread > 0 && (
+                                        <button onClick={onMarkAllRead} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">Mark all read</button>
+                                    )}
+                                    <button onClick={() => setOpen(false)}><Icons.X className="w-4 h-4 text-gray-500 hover:text-gray-300" /></button>
+                                </div>
+                            </div>
+                            <div className="max-h-72 overflow-y-auto no-scrollbar">
+                                {alerts.length === 0 ? (
+                                    <p className="p-4 text-gray-500 text-sm text-center">No alerts</p>
+                                ) : (
+                                    alerts.slice(0, 10).map((a, i) => (
+                                        <div key={i} className={`p-3 border-b border-gray-800/50 flex gap-3 items-start ${!a.read ? 'bg-rose-500/5' : ''}`}>
+                                            <Icons.AlertTriangle className={`w-4 h-4 shrink-0 mt-0.5 ${a.level === 'critical' ? 'text-rose-500' : 'text-amber-400'}`} />
+                                            <div className="min-w-0">
+                                                <p className={`text-xs md:text-sm truncate ${!a.read ? 'text-gray-100 font-medium' : 'text-gray-400'}`}>{a.message}</p>
+                                                <span className="text-[10px] text-gray-500 font-mono">{a.time}</span>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        /* ── Tab 子頁面：Labs & ABG ── */
+        const LabsTab = () => {
+            const labs = [
+                { test: 'WBC', value: '14.2', unit: '×10³/µL', ref: '4.5-11.0', status: 'warning' },
+                { test: 'Hemoglobin', value: '11.8', unit: 'g/dL', ref: '13.5-17.5', status: 'warning' },
+                { test: 'Platelets', value: '185', unit: '×10³/µL', ref: '150-400', status: 'normal' },
+                { test: 'Creatinine', value: '1.8', unit: 'mg/dL', ref: '0.7-1.3', status: 'warning' },
+                { test: 'BUN', value: '32', unit: 'mg/dL', ref: '7-20', status: 'warning' },
+                { test: 'Lactate', value: '3.2', unit: 'mmol/L', ref: '0.5-2.0', status: 'critical' },
+                { test: 'Procalcitonin', value: '4.8', unit: 'ng/mL', ref: '<0.5', status: 'critical' },
+                { test: 'CRP', value: '128', unit: 'mg/L', ref: '<10', status: 'critical' }
+            ];
+            const abg = [
+                { test: 'pH', value: '7.32', ref: '7.35-7.45', status: 'warning' },
+                { test: 'PaCO₂', value: '48', ref: '35-45 mmHg', status: 'warning' },
+                { test: 'PaO₂', value: '72', ref: '80-100 mmHg', status: 'warning' },
+                { test: 'HCO₃⁻', value: '22', ref: '22-26 mEq/L', status: 'normal' },
+                { test: 'BE', value: '-3.1', ref: '-2 to +2', status: 'warning' },
+                { test: 'SaO₂', value: '94', ref: '>95%', status: 'warning' }
+            ];
+            const sColor = { normal: 'text-emerald-400', warning: 'text-amber-400', critical: 'text-rose-500' };
+
+            return (
+                <div className="space-y-6">
+                    <div className="bg-gray-900/50 rounded-xl border border-gray-800 p-4 md:p-5 overflow-x-auto">
+                        <h3 className="text-gray-300 font-semibold mb-4 flex items-center gap-2"><Icons.Stethoscope className="w-5 h-5 text-indigo-400" />Lab Results<span className="text-xs text-gray-500 font-mono ml-2">Last drawn: 06:00</span></h3>
+                        <table className="w-full text-sm min-w-[500px]">
+                            <thead>
+                                <tr className="text-gray-500 text-xs uppercase border-b border-gray-800">
+                                    <th className="text-left py-2 px-3">Test</th>
+                                    <th className="text-right py-2 px-3">Value</th>
+                                    <th className="text-right py-2 px-3">Unit</th>
+                                    <th className="text-right py-2 px-3">Reference</th>
+                                    <th className="text-right py-2 px-3">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {labs.map((l, i) => (
+                                    <tr key={i} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
+                                        <td className="py-2.5 px-3 text-gray-300">{l.test}</td>
+                                        <td className={`py-2.5 px-3 text-right font-mono font-bold ${sColor[l.status]}`}>{l.value}</td>
+                                        <td className="py-2.5 px-3 text-right text-gray-500">{l.unit}</td>
+                                        <td className="py-2.5 px-3 text-right text-gray-500 font-mono">{l.ref}</td>
+                                        <td className="py-2.5 px-3 text-right"><span className={`text-[10px] uppercase font-bold ${sColor[l.status]}`}>{l.status}</span></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div className="bg-gray-900/50 rounded-xl border border-gray-800 p-4 md:p-5 overflow-x-auto">
+                        <h3 className="text-gray-300 font-semibold mb-4 flex items-center gap-2"><Icons.Wind className="w-5 h-5 text-cyan-400" />ABG Analysis<span className="text-xs text-gray-500 font-mono ml-2">Arterial sample 05:45</span></h3>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                            {abg.map((a, i) => (
+                                <div key={i} className="bg-gray-800/30 border border-gray-800 rounded-lg p-3">
+                                    <div className="text-[10px] text-gray-500 uppercase mb-1">{a.test}</div>
+                                    <div className={`text-xl font-bold font-mono ${sColor[a.status]}`}>{a.value}</div>
+                                    <div className="text-[10px] text-gray-500 mt-1">Ref: {a.ref}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        /* ── Tab 子頁面：Ventilator ── */
+        const VentTab = () => {
+            const settings = [
+                { label: 'Mode', value: 'SIMV-PS' }, { label: 'FiO₂', value: '40%' }, { label: 'PEEP', value: '8 cmH₂O' },
+                { label: 'PS', value: '12 cmH₂O' }, { label: 'Vt (set)', value: '450 mL' }, { label: 'RR (set)', value: '14 rpm' }
+            ];
+            const measured = [
+                { label: 'Vt (actual)', value: '478 mL', status: 'normal' }, { label: 'RR (total)', value: '18 rpm', status: 'normal' },
+                { label: 'MV', value: '8.6 L/min', status: 'normal' }, { label: 'Peak Paw', value: '24 cmH₂O', status: 'normal' },
+                { label: 'Plateau', value: '20 cmH₂O', status: 'normal' }, { label: 'Compliance', value: '38 mL/cmH₂O', status: 'warning' }
+            ];
+
+            return (
+                <div className="space-y-6">
+                    <div className="bg-gray-900/50 rounded-xl border border-gray-800 p-4 md:p-5">
+                        <h3 className="text-gray-300 font-semibold mb-4 flex items-center gap-2"><Icons.Wind className="w-5 h-5 text-indigo-400" />Ventilator Settings</h3>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                            {settings.map((s, i) => (
+                                <div key={i} className="bg-gray-800/30 border border-gray-700 rounded-lg p-3">
+                                    <div className="text-[10px] text-gray-500 uppercase">{s.label}</div>
+                                    <div className="text-lg font-bold font-mono text-gray-200 mt-1">{s.value}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="bg-gray-900/50 rounded-xl border border-gray-800 p-4 md:p-5">
+                        <h3 className="text-gray-300 font-semibold mb-4 flex items-center gap-2"><Icons.Activity className="w-5 h-5 text-cyan-400" />Measured Parameters</h3>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                            {measured.map((m, i) => (
+                                <div key={i} className={`border rounded-lg p-3 ${m.status === 'normal' ? 'bg-emerald-400/5 border-emerald-400/20' : 'bg-amber-400/5 border-amber-400/20'}`}>
+                                    <div className="text-[10px] text-gray-500 uppercase">{m.label}</div>
+                                    <div className={`text-lg font-bold font-mono mt-1 ${m.status === 'normal' ? 'text-emerald-400' : 'text-amber-400'}`}>{m.value}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        /* ── Tab 子頁面：I/O Flowsheet ── */
+        const IOTab = () => {
+            const intake = [
+                { time: '06:00', type: 'IV NS', vol: '250 mL' }, { time: '08:00', type: 'Norepinephrine', vol: '48 mL' },
+                { time: '10:00', type: 'Meropenem 1g', vol: '100 mL' }, { time: '12:00', type: 'IV NS', vol: '500 mL' },
+                { time: '14:00', type: 'Albumin 25%', vol: '100 mL' }
+            ];
+            const output = [
+                { time: '06:00', type: 'Urine', vol: '120 mL' }, { time: '08:00', type: 'Urine', vol: '85 mL' },
+                { time: '10:00', type: 'Drain (JP)', vol: '45 mL' }, { time: '12:00', type: 'Urine', vol: '60 mL' },
+                { time: '14:00', type: 'Urine', vol: '55 mL' }
+            ];
+            const totalIn = 998, totalOut = 365;
+
+            return (
+                <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-gray-900/50 rounded-xl border border-gray-800 p-4 md:p-5">
+                            <h3 className="text-emerald-400 font-semibold mb-4 flex items-center gap-2 text-sm"><Icons.Droplets className="w-5 h-5" />Intake</h3>
+                            <table className="w-full text-sm">
+                                <thead><tr className="text-gray-500 text-xs border-b border-gray-800"><th className="text-left py-2">Time</th><th className="text-left py-2">Type</th><th className="text-right py-2">Volume</th></tr></thead>
+                                <tbody>{intake.map((r, i) => <tr key={i} className="border-b border-gray-800/30"><td className="py-2 text-gray-400 font-mono text-xs">{r.time}</td><td className="py-2 text-gray-300">{r.type}</td><td className="py-2 text-right text-emerald-400 font-mono">{r.vol}</td></tr>)}</tbody>
+                            </table>
+                            <div className="mt-3 pt-3 border-t border-gray-800 flex justify-between"><span className="text-gray-400 text-sm font-semibold">Total Intake</span><span className="text-emerald-400 font-bold font-mono">{totalIn} mL</span></div>
+                        </div>
+                        <div className="bg-gray-900/50 rounded-xl border border-gray-800 p-4 md:p-5">
+                            <h3 className="text-amber-400 font-semibold mb-4 flex items-center gap-2 text-sm"><Icons.Droplets className="w-5 h-5" />Output</h3>
+                            <table className="w-full text-sm">
+                                <thead><tr className="text-gray-500 text-xs border-b border-gray-800"><th className="text-left py-2">Time</th><th className="text-left py-2">Type</th><th className="text-right py-2">Volume</th></tr></thead>
+                                <tbody>{output.map((r, i) => <tr key={i} className="border-b border-gray-800/30"><td className="py-2 text-gray-400 font-mono text-xs">{r.time}</td><td className="py-2 text-gray-300">{r.type}</td><td className="py-2 text-right text-amber-400 font-mono">{r.vol}</td></tr>)}</tbody>
+                            </table>
+                            <div className="mt-3 pt-3 border-t border-gray-800 flex justify-between"><span className="text-gray-400 text-sm font-semibold">Total Output</span><span className="text-amber-400 font-bold font-mono">{totalOut} mL</span></div>
+                        </div>
+                    </div>
+                    <div className="bg-gray-900/50 rounded-xl border border-gray-800 p-4 flex justify-between items-center">
+                        <span className="text-gray-300 font-semibold">Net Fluid Balance (8H)</span>
+                        <span className="text-rose-400 font-bold font-mono text-xl">+{totalIn - totalOut} mL</span>
+                    </div>
+                </div>
+            );
+        };
+
+        /* ══════ MAIN APP ══════ */
+        function App() {
+            // --- localStorage 持久化初始化 ---
+            const [activeTab, setActiveTab] = useState(() => {
+                try { const s = localStorage.getItem('eicu_activeTab'); return s || 'vitals'; } catch(e) { return 'vitals'; }
+            });
+            const [vitals, setVitals] = useState({ hr: 88, spo2: 97, map: 72, rr: 18, temp: 37.2 });
+            const [trends, setTrends] = useState({ hr: 0.5, spo2: 0, map: -1.2, rr: 0.1, temp: 0 });
+            const [history, setHistory] = useState([]);
+            const [currentTime, setCurrentTime] = useState(new Date());
+
+            // AI 分析相關狀態
+            const [aiNote, setAiNote] = useState("Patient exhibiting gradual decline in Mean Arterial Pressure (MAP) over the last hour. Heart rate shows compensatory elevation. Continuous monitoring required.");
+            const [isAiLoading, setIsAiLoading] = useState(false);
+
+            // 圖表與指標狀態
+            const [isPaused, setIsPaused] = useState(() => {
+                try { const s = localStorage.getItem('eicu_isPaused'); return s === 'true'; } catch(e) { return false; }
+            });
+            const [visibleMetrics, setVisibleMetrics] = useState({ hr: true, map: true, spo2: false });
+            const [selectedMetric, setSelectedMetric] = useState(null);
+
+            // 警報狀態
+            const defaultAlerts = [
+                { message: 'MAP dropped below 65 mmHg – Hypotension alert', level: 'critical', time: '15:32:10', read: false },
+                { message: 'Sepsis Risk elevated to 82% – Review recommended', level: 'critical', time: '15:28:45', read: false },
+                { message: 'SpO₂ briefly dipped to 93% – recovered', level: 'warning', time: '15:15:22', read: true }
+            ];
+            const [alerts, setAlerts] = useState(() => {
+                try { const s = localStorage.getItem('eicu_alerts'); return s ? JSON.parse(s) : defaultAlerts; } catch(e) { return defaultAlerts; }
+            });
+            const [sepsisRisk, setSepsisRisk] = useState(82);
+
+            // Refs
+            const vitalsRef = useRef(vitals);
+            const isPausedRef = useRef(isPaused);
+            useEffect(() => { vitalsRef.current = vitals; }, [vitals]);
+            useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
+
+            // --- localStorage 持久化寫入 ---
+            useEffect(() => { try { localStorage.setItem('eicu_activeTab', activeTab); } catch(e) {} }, [activeTab]);
+            useEffect(() => { try { localStorage.setItem('eicu_isPaused', String(isPaused)); } catch(e) {} }, [isPaused]);
+            useEffect(() => { try { localStorage.setItem('eicu_alerts', JSON.stringify(alerts)); } catch(e) {} }, [alerts]);
+
+            // 處理警報「全部已讀」
+            const handleMarkAllRead = useCallback(() => {
+                setAlerts(prev => prev.map(a => ({ ...a, read: true })));
+            }, []);
+
+            // 處理點擊頂部卡片切換圖表
+            const handleMetricCardClick = useCallback((metricId) => {
+                setSelectedMetric(metricId);
+                if (['hr', 'map', 'spo2'].includes(metricId)) {
+                    setVisibleMetrics({ hr: metricId === 'hr', map: metricId === 'map', spo2: metricId === 'spo2' });
+                }
+                setActiveTab('vitals');
+            }, []);
+
+            // 處理手動切換圖表顯示 (防呆：防止全部取消勾選導致圖表崩潰)
+            const handleToggleMetric = useCallback((key) => {
+                setVisibleMetrics(prev => {
+                    const next = { ...prev, [key]: !prev[key] };
+                    // 如果嘗試關閉最後一個指標，則不允許（直接回傳上一個狀態）
+                    if (!Object.values(next).some(Boolean)) return prev;
+                    return next;
+                });
+            }, []);
+
+            // --- 計算動態 Sepsis Risk 的輔助函式 ---
+            const calcSepsisRisk = (hr, mapVal, spo2, temp) => {
+                let risk = 40; // baseline
+                if (mapVal < 65) risk += 25; else if (mapVal < 75) risk += 10;
+                if (hr > 110) risk += 15; else if (hr > 100) risk += 8;
+                if (spo2 < 90) risk += 20; else if (spo2 < 94) risk += 10;
+                if (temp > 38.5) risk += 15; else if (temp > 38) risk += 8;
+                if (temp < 36) risk += 12;
+                return Math.min(100, Math.max(0, Math.round(risk + (Math.random() * 6 - 3))));
+            };
+
+            // 模擬資料流 (WebSockets Mock)
+            useEffect(() => {
+                const initialHistory = [];
+                let tempMap = 85, tempHr = 75;
+                const now = new Date();
+
+                for (let i = 50; i >= 0; i--) {
+                    const t = new Date(now.getTime() - i * 1000);
+                    const iHr = tempHr + (Math.random() * 4 - 2);
+                    const iMap = tempMap + (Math.random() * 3 - 2);
+                    const iSpo2 = 97 + (Math.random() * 2 - 1);
+                    initialHistory.push({
+                        time: t.toLocaleTimeString('en-US', { hour12: false, minute: '2-digit', second: '2-digit' }),
+                        hr: iHr, map: iMap, spo2: iSpo2
+                    });
+                    tempMap -= 0.2; tempHr += 0.2;
+                }
+                setHistory(initialHistory);
+
+                const interval = setInterval(() => {
+                    setCurrentTime(new Date());
+                    if (isPausedRef.current) return;
+
+                    setVitals(prev => {
+                        const newHr = prev.hr + (Math.random() * 2 - 0.8);
+                        const newMap = prev.map + (Math.random() * 2 - 1.2);
+                        const spo2Drift = (prev.spo2 > 96) ? -0.3 : 0.2;
+                        const newSpo2 = Math.min(100, Math.max(85, prev.spo2 + spo2Drift + (Math.random() * 1.5 - 0.7)));
+                        const newRr = prev.rr + (Math.random() * 1 - 0.5);
+                        const newTemp = prev.temp + (Math.random() * 0.1 - 0.05);
+
+                        setTrends({ hr: newHr - prev.hr, spo2: newSpo2 - prev.spo2, map: newMap - prev.map, rr: newRr - prev.rr, temp: newTemp - prev.temp });
+
+                        // 動態更新 Sepsis Risk
+                        const newRisk = calcSepsisRisk(newHr, newMap, newSpo2, newTemp);
+                        setSepsisRisk(newRisk);
+
+                        // 隨機產生異常警報 (Demo 展示用)
+                        if (Math.random() < 0.02) {
+                            const msgs = ['SpO₂ transient desaturation detected', 'HR variability increase noted', 'MAP trend downward – monitor closely', 'Respiratory rate irregularity detected'];
+                            setAlerts(a => [{ message: msgs[Math.floor(Math.random() * msgs.length)], level: Math.random() > 0.5 ? 'critical' : 'warning', time: new Date().toLocaleTimeString('en-US', { hour12: false }), read: false }, ...a].slice(0, 20));
+                        }
+                        if (newMap < 65 && Math.random() < 0.3) {
+                            setAlerts(a => [{ message: `MAP critically low: ${newMap.toFixed(0)} mmHg`, level: 'critical', time: new Date().toLocaleTimeString('en-US', { hour12: false }), read: false }, ...a].slice(0, 20));
+                        }
+
+                        setHistory(h => [...h.slice(1), { time: new Date().toLocaleTimeString('en-US', { hour12: false, minute: '2-digit', second: '2-digit' }), hr: newHr, map: newMap, spo2: newSpo2 }]);
+                        return { hr: newHr, spo2: newSpo2, map: newMap, rr: newRr, temp: newTemp };
+                    });
+                }, 1000);
+
+                return () => clearInterval(interval);
+            }, []);
+
+            const handleExportCSV = () => {
+                const headers = ["Time", "HR (bpm)", "MAP (mmHg)", "SpO2 (%)", "RR (rpm)", "Temp (°C)", "Sepsis Risk (%)"];
+                const v = vitalsRef.current;
+                const csvRows = history.map(r => `${r.time},${r.hr.toFixed(1)},${r.map.toFixed(1)},${r.spo2.toFixed(1)},${v.rr.toFixed(1)},${v.temp.toFixed(1)},${sepsisRisk}`);
+                const csvContent = "data:text/csv;charset=utf-8," + encodeURIComponent([headers.join(","), ...csvRows].join("\n"));
+                const link = document.createElement("a");
+                link.setAttribute("href", csvContent);
+                link.setAttribute("download", `Patient_Vitals_${Date.now()}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
+            // --- Mock AI 分析 (穩定 Demo 版本，不依賴外部 API) ---
+            const handleGenerateAIAnalysis = async () => {
+                setIsAiLoading(true);
+                const cv = vitalsRef.current;
+                const recentAlerts = alerts.filter(a => !a.read).slice(0, 3).map(a => a.message).join('; ');
+
+                // 模擬 AI 思考延遲
+                await new Promise(res => setTimeout(res, 1200 + Math.random() * 800));
+
+                // 根據病人目前數值產生對應的 Mock 分析
+                let observation = '';
+                let actions = [];
+
+                if (cv.map < 65) {
+                    observation = `Clinical Observation: Patient is currently hypotensive with MAP at ${cv.map.toFixed(0)} mmHg. Heart rate is ${cv.hr > 100 ? 'elevated' : 'within range'} at ${cv.hr.toFixed(0)} bpm, suggesting ${cv.hr > 100 ? 'compensatory tachycardia' : 'limited compensatory reserve'}. Immediate hemodynamic intervention is warranted.`;
+                    actions = ['• Consider IV fluid bolus (500 mL crystalloid over 15-30 min) and reassess MAP response', '• Evaluate vasopressor initiation or dose titration (Norepinephrine) if fluid-unresponsive'];
+                } else if (cv.spo2 < 92) {
+                    observation = `Clinical Observation: SpO₂ has declined to ${cv.spo2.toFixed(0)}%, indicating worsening oxygenation. With current ventilator settings (FiO₂ 40%, PEEP 8), this may reflect disease progression or V/Q mismatch.`;
+                    actions = ['• Consider increasing FiO₂ or PEEP; obtain ABG to assess PaO₂/FiO₂ ratio', '• Review chest imaging and assess for new infiltrates, effusion, or pneumothorax'];
+                } else if (cv.hr > 110) {
+                    observation = `Clinical Observation: Sustained tachycardia at ${cv.hr.toFixed(0)} bpm with MAP ${cv.map.toFixed(0)} mmHg. In the context of pneumonia admission with elevated inflammatory markers (Procalcitonin 4.8, Lactate 3.2), this raises concern for evolving sepsis.`;
+                    actions = ['• Reassess fluid status and consider targeted fluid resuscitation', '• Verify antibiotic coverage adequacy and review culture sensitivities'];
+                } else {
+                    observation = `Clinical Observation: Hemodynamics are relatively stable — HR ${cv.hr.toFixed(0)} bpm, MAP ${cv.map.toFixed(0)} mmHg, SpO₂ ${cv.spo2.toFixed(0)}%. Temperature ${cv.temp.toFixed(1)}°C. Continue current management with close monitoring.`;
+                    actions = ['• Continue current antibiotic regimen (Meropenem) and monitor serial Procalcitonin/Lactate trends', '• Assess ventilator weaning readiness if oxygenation and hemodynamics remain stable'];
+                }
+
+                if (recentAlerts) {
+                    observation += `\n\nRecent Alerts: ${recentAlerts}`;
+                }
+
+                setAiNote(`${observation}\n\nSuggested Actions:\n${actions.join('\n')}`);
+                setIsAiLoading(false);
+            };
+
+            const tabs = [
+                { id: 'vitals', label: 'Real-time Vitals', icon: Icons.Activity },
+                { id: 'labs', label: 'Labs & ABG', icon: Icons.Stethoscope },
+                { id: 'vent', label: 'Ventilator (RT)', icon: Icons.Wind },
+                { id: 'io', label: 'I/O & Meds', icon: Icons.Droplets }
+            ];
+
+            return (
+                <div className={`min-h-screen bg-[#0B0F19] text-gray-100 font-sans selection:bg-indigo-500/30 ${sepsisRisk > 80 ? 'critical-border-pulse' : ''}`}>
+                    {/* Header 區域 */}
+                    <div className="sticky top-0 z-50 bg-[#0B0F19]/95 backdrop-blur-md border-b border-gray-800">
+                        <header className="px-4 md:px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="flex items-center gap-3 md:gap-6">
+                                <div className="w-10 h-10 md:w-12 md:h-12 bg-indigo-500/20 rounded-full flex items-center justify-center border border-indigo-500/30 shrink-0">
+                                    <span className="text-indigo-400 font-bold text-lg md:text-xl">W4</span>
+                                </div>
+                                <div>
+                                    <h1 className="text-lg md:text-2xl font-bold tracking-tight text-white flex flex-wrap items-center gap-2">
+                                        Bed 04: LIN, M.
+                                        <span className="text-xs md:text-sm font-normal text-gray-400 bg-gray-800 px-2 py-0.5 rounded">#PT-88492</span>
+                                    </h1>
+                                    <p className="text-gray-400 text-xs md:text-sm mt-0.5">Male • 68 yrs • 72 kg • Adm: Pneumonia</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3 justify-between sm:justify-end w-full sm:w-auto">
+                                <div className="flex flex-col items-start sm:items-end">
+                                    <span className="text-gray-400 text-[10px] md:text-xs">System Status</span>
+                                    <span className="text-emerald-400 text-xs md:text-sm flex items-center gap-1">
+                                        <Icons.CheckCircle2 className="w-3.5 h-3.5 md:w-4 md:h-4" /> CDSS Active
+                                    </span>
+                                </div>
+
+                                <NotificationBell alerts={alerts} onMarkAllRead={handleMarkAllRead} />
+
+                                <button onClick={handleExportCSV} className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-200 px-3 py-1.5 md:px-4 md:py-2 rounded-lg border border-gray-700 transition-all text-xs md:text-sm font-medium shrink-0">
+                                    <Icons.Download className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                                    <span className="hidden sm:inline">Export CSV</span>
+                                </button>
+                            </div>
+                        </header>
+
+                        {/* Tabs 導航區域 */}
+                        <div className="px-4 md:px-6 flex items-center gap-4 md:gap-6 overflow-x-auto no-scrollbar border-t border-gray-800/50">
+                            {tabs.map(tab => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`py-3 text-sm font-medium whitespace-nowrap flex items-center gap-2 transition-colors border-b-2 ${activeTab === tab.id ? 'text-indigo-400 border-indigo-500' : 'text-gray-400 hover:text-gray-200 border-transparent'}`}
+                                >
+                                    <tab.icon className="w-4 h-4" /> {tab.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <main className="p-4 md:p-6 max-w-[1600px] mx-auto space-y-6">
+                        {/* Metric Cards (保持常駐在所有頁籤最上方) */}
+                        <section>
+                            <div className="flex items-center justify-between mb-4">
+                                <h2 className="text-base md:text-lg font-semibold text-gray-200 flex items-center gap-2">
+                                    <Icons.Activity className="w-4 h-4 md:w-5 md:h-5 text-gray-400" /> Continuous Monitoring
+                                </h2>
+                                <span className="text-gray-500 font-mono text-xs md:text-sm">{currentTime.toLocaleTimeString()}</span>
+                            </div>
+                            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
+                                <MetricCard title="Heart Rate" metricId="hr" value={vitals.hr} unit="bpm" icon={Icons.Heart} trend={trends.hr} onClick={handleMetricCardClick} isSelected={selectedMetric === 'hr'} />
+                                <MetricCard title="SpO₂" metricId="spo2" value={vitals.spo2} unit="%" icon={Icons.Droplets} trend={trends.spo2} onClick={handleMetricCardClick} isSelected={selectedMetric === 'spo2'} />
+                                <MetricCard title="MAP" metricId="map" value={vitals.map} unit="mmHg" icon={Icons.Activity} trend={trends.map} onClick={handleMetricCardClick} isSelected={selectedMetric === 'map'} />
+                                <MetricCard title="Resp Rate" metricId="rr" value={vitals.rr} unit="rpm" icon={Icons.Wind} trend={trends.rr} onClick={handleMetricCardClick} isSelected={selectedMetric === 'rr'} />
+                                <MetricCard title="Temp" metricId="temp" value={vitals.temp} unit="°C" icon={Icons.Thermometer} trend={trends.temp} onClick={handleMetricCardClick} isSelected={selectedMetric === 'temp'} />
+                            </div>
+                        </section>
+
+                        {/* 根據 ActiveTab 顯示的下方內容 */}
+                        {activeTab === 'vitals' && (
+                            <section className="space-y-4">
+                                {/* Patient Safety Banner */}
+                                {sepsisRisk > 75 && (
+                                    <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-3 flex items-center gap-3 animate-pulse">
+                                        <Icons.ShieldAlert className="w-5 h-5 text-rose-400 shrink-0" />
+                                        <span className="text-rose-300 font-semibold text-sm">⚠ High Sepsis Risk ({sepsisRisk}%) — Consider immediate clinical review and intervention protocol</span>
+                                    </div>
+                                )}
+                                {vitals.map < 65 && (
+                                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-center gap-3">
+                                        <Icons.AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+                                        <span className="text-amber-300 font-semibold text-sm">⚠ Active Hypotension — MAP {vitals.map.toFixed(0)} mmHg (target ≥ 65 mmHg)</span>
+                                    </div>
+                                )}
+
+                                {/* Case Summary Card */}
+                                <div className="bg-indigo-500/5 border border-indigo-500/20 rounded-xl p-4 flex flex-wrap gap-x-6 gap-y-2 text-xs md:text-sm">
+                                    <span className="text-indigo-300 font-semibold">📋 Case Summary</span>
+                                    <span className="text-gray-400">ICU Day 2</span>
+                                    <span className="text-gray-400">Dx: Pneumonia c/w Septic Shock</span>
+                                    <span className="text-gray-400">On Ventilator (SIMV-PS)</span>
+                                    <span className="text-gray-400">On Norepinephrine</span>
+                                    <span className="text-gray-400">Suspected AKI (Cr 1.8)</span>
+                                </div>
+
+                                <div className="grid grid-cols-1 xl:grid-cols-4 lg:grid-cols-3 gap-6">
+                                <div className="xl:col-span-3 lg:col-span-2 space-y-4 w-full overflow-hidden">
+                                    <CustomTimeSeriesChart
+                                        data={history}
+                                        visibleMetrics={visibleMetrics}
+                                        onToggleMetric={handleToggleMetric}
+                                        isPaused={isPaused}
+                                        onTogglePause={() => setIsPaused(!isPaused)}
+                                    />
+
+                                    <div className="bg-gray-800/30 border border-gray-800 rounded-xl p-4 md:p-5 flex flex-col gap-4">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <Icons.FileText className="w-5 h-5 text-gray-400 shrink-0" />
+                                                <h4 className="text-gray-300 font-medium text-sm md:text-base">Clinical Observation</h4>
+                                            </div>
+                                            <button
+                                                onClick={handleGenerateAIAnalysis}
+                                                disabled={isAiLoading}
+                                                className="flex items-center gap-1.5 text-xs bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 px-3 py-1.5 rounded-lg border border-indigo-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                                            >
+                                                {isAiLoading ? <Icons.RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Icons.Sparkles className="w-3.5 h-3.5" />}
+                                                <span>{isAiLoading ? 'Analyzing...' : '✨ AI 智能分析'}</span>
+                                            </button>
+                                        </div>
+                                        <div className={`p-4 rounded-lg bg-black/20 border border-gray-800/50 transition-all duration-300 ${isAiLoading ? 'animate-pulse' : ''}`}>
+                                            <p className="text-gray-400 text-xs md:text-sm leading-relaxed whitespace-pre-wrap font-mono">{aiNote}</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="col-span-1 flex flex-col gap-4 min-w-[280px]">
+                                    <div className="bg-gradient-to-b from-gray-900 to-[#1A0B10] border border-rose-500/20 rounded-xl p-5 shadow-[0_0_15px_rgba(225,29,72,0.1)] relative overflow-hidden">
+                                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-rose-500 via-orange-500 to-rose-500" />
+                                        <div className="flex items-center gap-2 mb-4">
+                                            <Icons.Brain className="w-5 h-5 md:w-6 md:h-6 text-rose-400 shrink-0" />
+                                            <h3 className="text-base md:text-lg font-bold text-gray-100 truncate">AI Predictive Insights</h3>
+                                        </div>
+
+                                        <div className="mb-6">
+                                            <div className="flex justify-between items-end mb-2">
+                                                <span className="text-rose-400 font-semibold flex items-center gap-1.5 text-sm whitespace-nowrap">
+                                                    <Icons.ShieldAlert className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" /> Sepsis Risk (4H)
+                                                </span>
+                                                <span className="text-2xl md:text-3xl font-bold text-rose-500 font-mono">{sepsisRisk}%</span>
+                                            </div>
+                                            <div className="w-full h-2 md:h-3 bg-gray-800 rounded-full overflow-hidden">
+                                                <div className="h-full bg-gradient-to-r from-amber-400 to-rose-500 relative" style={{ width: `${sepsisRisk}%` }}>
+                                                    <div className="absolute inset-0 bg-white/20 animate-[pulse_2s_ease-in-out_infinite]" />
+                                                </div>
+                                            </div>
+                                            <p className="text-[10px] md:text-xs text-rose-400/80 mt-2 text-right">High Probability of deterioration</p>
+                                        </div>
+
+                                        <div className="space-y-3">
+                                            <h4 className="text-[10px] md:text-xs font-semibold text-gray-500 uppercase tracking-wider">Key Contributing Factors</h4>
+                                            <div className="bg-rose-500/10 border border-rose-500/20 rounded p-2 md:p-3 flex justify-between items-center gap-2">
+                                                <span className="text-xs md:text-sm text-gray-300 truncate">MAP Trajectory</span>
+                                                <span className="text-rose-400 font-mono text-xs md:text-sm whitespace-nowrap">↓ 15% (1h)</span>
+                                            </div>
+                                            <div className="bg-amber-500/10 border border-amber-500/20 rounded p-2 md:p-3 flex justify-between items-center gap-2">
+                                                <span className="text-xs md:text-sm text-gray-300 truncate">HR Variability</span>
+                                                <span className="text-amber-400 font-mono text-xs md:text-sm whitespace-nowrap">↑ Elevated</span>
+                                            </div>
+                                            <div className="bg-gray-800/50 border border-gray-700 rounded p-2 md:p-3 flex justify-between items-center gap-2">
+                                                <span className="text-xs md:text-sm text-gray-300 truncate">Lactate (Last lab)</span>
+                                                <span className="text-rose-400 font-mono text-xs md:text-sm whitespace-nowrap">3.2 mmol/L</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-5 md:mt-6 pt-4 border-t border-rose-500/20">
+                                            <h4 className="text-[10px] md:text-xs font-semibold text-rose-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                                                <Icons.AlertTriangle className="w-3 h-3 md:w-3.5 md:h-3.5 shrink-0" /> Action Recommended
+                                            </h4>
+                                            <ul className="text-xs md:text-sm text-gray-300 space-y-2">
+                                                <li className="flex items-start gap-2"><span className="text-rose-500 mt-0.5 shrink-0">•</span><span>Consider fluid bolus administration</span></li>
+                                                <li className="flex items-start gap-2"><span className="text-rose-500 mt-0.5 shrink-0">•</span><span>Review broad-spectrum antibiotics</span></li>
+                                            </ul>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex justify-between items-center">
+                                        <div>
+                                            <div className="text-[10px] md:text-xs text-gray-500 uppercase font-semibold">AKI Risk (24H)</div>
+                                            <div className="text-amber-400 font-bold mt-1 text-sm md:text-base">Medium (45%)</div>
+                                        </div>
+                                        <Icons.Activity className="w-6 h-6 md:w-8 md:h-8 text-gray-700 shrink-0" />
+                                    </div>
+                                </div>
+                            </div>
+                            </section>
+                        )}
+
+                        {activeTab === 'labs' && <LabsTab />}
+                        {activeTab === 'vent' && <VentTab />}
+                        {activeTab === 'io' && <IOTab />}
+
+                        {/* Prototype Disclaimer */}
+                        <div className="mt-8 border-t border-gray-800 pt-4 text-center">
+                            <p className="text-gray-600 text-[10px] md:text-xs leading-relaxed max-w-3xl mx-auto">
+                                ⚠️ <strong>Prototype Disclaimer</strong>: This is a front-end demonstration prototype for educational and portfolio purposes only.
+                                It does NOT connect to real patient data, medical devices, or clinical decision support systems.
+                                Not intended for actual clinical use. No real AI model is deployed — all analyses are simulated.
+                                Not compliant with HIPAA, GDPR, or any medical device regulations.
+                            </p>
+                        </div>
+                    </main>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+
+</html>
