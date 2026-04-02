@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { fetchPatients, fetchPatientOverview, fetchPatientVitals, fetchPatientSofa, fetchPatientInsights, fetchHealth } from './lib/api';
 import { getRiskLevel } from './lib/clinicalRules';
-import { GAP_WINDOWS } from './lib/fieldMapping';
 import Header from './components/Header';
 import PatientOverview from './components/PatientOverview';
 import VitalsHero from './components/VitalsHero';
 import SofaChart from './components/SofaChart';
 import OrganBreakdown from './components/OrganBreakdown';
+import OrganTrendRegistry from './components/OrganTrendRegistry';
 import ClinicalInsights from './components/ClinicalInsights';
 import { Loader } from './components/Icons';
+import { normalizeInsights } from './lib/sofaDatasetAdapter';
 
 export default function App() {
   // ─── Global state ───
@@ -16,13 +17,13 @@ export default function App() {
   const [selectedStayId, setSelectedStayId] = useState(null);
   const [gap, setGap] = useState(4);
   const [selectedHour, setSelectedHour] = useState(null);
-  const [timeWindow, setTimeWindow] = useState(48); // 24 or 48
+  const [timeWindow, setTimeWindow] = useState(48);
 
   // ─── Data state ───
   const [overview, setOverview] = useState(null);
   const [vitals, setVitals] = useState([]);
   const [sofaData, setSofaData] = useState([]);
-  const [insights, setInsights] = useState(null);
+  const [insights, setInsights] = useState(null); // Will hold normalized insights
 
   // ─── UI state ───
   const [loading, setLoading] = useState(true);
@@ -55,7 +56,7 @@ export default function App() {
       .catch(e => setError(e.message));
   }, [serverReady]);
 
-  // Load patient data when selection changes
+  // Unified data loader
   const loadPatientData = useCallback(async (stayId, gapVal, tw) => {
     if (!stayId) return;
     setLoading(true);
@@ -70,13 +71,11 @@ export default function App() {
       setVitals(vit);
       setSofaData(sofa);
 
-      // Set selected hour to the latest available
-      const maxHour = sofa.length > 0 ? sofa[sofa.length - 1].hour_idx : 0;
+      const maxHour = sofa.length > 0 ? Number(sofa[sofa.length - 1].hour_idx) : 0;
       setSelectedHour(maxHour);
 
-      // Load insights for latest hour
-      const ins = await fetchPatientInsights(stayId, gapVal, maxHour);
-      setInsights(ins);
+      const insRaw = await fetchPatientInsights(stayId, gapVal, maxHour);
+      setInsights(normalizeInsights(insRaw));
     } catch (e) {
       setError(e.message);
     }
@@ -87,21 +86,21 @@ export default function App() {
     loadPatientData(selectedStayId, gap, timeWindow);
   }, [selectedStayId, gap, timeWindow, loadPatientData]);
 
-  // Load insights when selected hour changes
   const handleHourChange = useCallback(async (hour) => {
-    setSelectedHour(hour);
+    setSelectedHour(Number(hour));
     if (!selectedStayId) return;
     try {
-      const ins = await fetchPatientInsights(selectedStayId, gap, hour);
-      setInsights(ins);
-    } catch {}
+      const insRaw = await fetchPatientInsights(selectedStayId, gap, hour);
+      setInsights(normalizeInsights(insRaw));
+    } catch (err) {
+      console.error('Failed to update insights on hour change:', err);
+    }
   }, [selectedStayId, gap]);
 
   // Determine if critical state
   const isCritical = insights && insights.trend?.code === 1 && insights.actualSofa >= 10;
   const riskLevel = insights ? getRiskLevel(insights.actualSofa) : null;
 
-  // ─── Server loading screen ───
   if (!serverReady) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#F0F4F8] gap-6">
@@ -109,8 +108,8 @@ export default function App() {
         <div className="medical-card p-8 text-center max-w-md">
           <Loader className="w-10 h-10 text-blue-600 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-slate-800 mb-2">ICU SOFA 監測系統</h2>
-          <p className="text-slate-500 text-sm">正在載入臨床資料，請稍候...</p>
-          <p className="text-slate-400 text-xs mt-3 font-mono">Loading CSV datasets into memory</p>
+          <p className="text-slate-500 text-sm">正在載入及預處理預測資料...</p>
+          <p className="text-slate-400 text-xs mt-3 font-mono">Caching multiple patient datasets</p>
         </div>
       </div>
     );
@@ -118,10 +117,8 @@ export default function App() {
 
   return (
     <div className={`min-h-screen bg-[#F0F4F8] text-slate-800 font-sans selection:bg-blue-200 ${isCritical ? 'critical-border-pulse' : ''}`}>
-      {/* Top accent bar */}
       <div className="accent-gradient-bar" />
 
-      {/* Header */}
       <Header
         patients={patients}
         selectedStayId={selectedStayId}
@@ -135,7 +132,6 @@ export default function App() {
         overview={overview}
       />
 
-      {/* Main content */}
       <main className="max-w-[1600px] mx-auto px-4 md:px-6 py-6">
         {error && (
           <div className="medical-card p-4 mb-6 border-red-200 bg-red-50 text-red-700 text-sm">
@@ -145,38 +141,37 @@ export default function App() {
 
         {loading ? (
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            <div className="skeleton h-64" />
-            <div className="skeleton h-64 lg:col-span-2" />
-            <div className="skeleton h-64" />
-            <div className="skeleton h-48 lg:col-span-4" />
+            <div className="skeleton h-64" /><div className="skeleton h-64 lg:col-span-2" /><div className="skeleton h-64" />
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Left sidebar — Patient overview */}
+            {/* Left sidebar */}
             <div className="lg:col-span-3 space-y-5">
               <PatientOverview overview={overview} vitals={vitals} selectedHour={selectedHour} />
             </div>
 
-            {/* Center — Charts */}
+            {/* Center — Main Chart & Organ Status */}
             <div className="lg:col-span-6 space-y-5">
-              {/* Vitals cards */}
               <VitalsHero vitals={vitals} selectedHour={selectedHour} />
 
-              {/* SOFA Chart */}
               <SofaChart
                 sofaData={sofaData}
+                insights={insights}
                 gap={gap}
                 selectedHour={selectedHour}
                 onHourChange={handleHourChange}
               />
-            </div>
 
-            {/* Right sidebar — SOFA comparison + insights */}
-            <div className="lg:col-span-3 space-y-5">
-              <OrganBreakdown
+              <OrganTrendRegistry
                 insights={insights}
                 gap={gap}
+                selectedHour={selectedHour}
               />
+            </div>
+
+            {/* Right sidebar — Cards */}
+            <div className="lg:col-span-3 space-y-5">
+              <OrganBreakdown insights={insights} gap={gap} />
               <ClinicalInsights insights={insights} gap={gap} />
             </div>
           </div>

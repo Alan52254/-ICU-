@@ -61,15 +61,24 @@ app.get('/api/health', (req, res) => {
 
 // ─── Start server ───
 async function start() {
-  console.log('🚀 Starting ICU Dashboard API Server...');
-  await loadAllData();
+  // 1. Listen immediately so port is claimed and health-check is available
   app.listen(PORT, () => {
-    console.log(`\n🌐 API Server running at http://localhost:${PORT}`);
-    console.log(`   Try: http://localhost:${PORT}/api/patients\n`);
+    console.log(`🚀 ICU Dashboard API Server is UP and listening on port ${PORT}`);
+    console.log(`🏥 Status: Data loading in progress...`);
   });
+
+  // 2. Load data in background
+  try {
+    await loadAllData();
+    console.log(`\n🌐 API Server is READY. Data loaded successfully.`);
+    console.log(`   Try: http://localhost:${PORT}/api/patients\n`);
+  } catch (err) {
+    console.error('❌ Data loading failed:', err);
+    process.exit(1);
+  }
 }
 
 start().catch(err => {
-  console.error('❌ Failed to start server:', err);
+  console.error('❌ Failed to initialize server:', err);
   process.exit(1);
 });
