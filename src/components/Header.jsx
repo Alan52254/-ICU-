@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { GAP_WINDOWS, formatGender, formatAge } from '../lib/fieldMapping';
 import { Activity, ChevronDown, Clock } from './Icons';
 
-export default function Header({ patients, selectedStayId, onSelectPatient, gap, onGapChange, timeWindow, onTimeWindowChange, riskLevel, selectedHour, overview }) {
+export default function Header({ patients, selectedStayId, onSelectPatient, gap, onGapChange, activeView, onViewChange, riskLevel, selectedHour, overview }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const currentPatient = patients.find(p => p.stay_id === selectedStayId);
@@ -26,23 +26,23 @@ export default function Header({ patients, selectedStayId, onSelectPatient, gap,
 
           {/* Controls */}
           <div className="flex items-center gap-3 md:gap-5 flex-wrap">
-            {/* Time Window */}
-            <div className="flex items-center gap-1 text-xs font-medium text-slate-500">
-              <span className="hidden sm:inline uppercase tracking-wider text-[10px]">Time Window</span>
-              <div className="flex bg-white rounded-lg border border-slate-200 overflow-hidden">
-                {[24, 48].map(tw => (
-                  <button
-                    key={tw}
-                    onClick={() => onTimeWindowChange(tw)}
-                    className={`px-3 py-1.5 text-xs font-bold transition-all ${timeWindow === tw ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-blue-600'}`}
-                  >
-                    {tw}h
-                  </button>
-                ))}
-              </div>
+            {/* View Switcher Navigation */}
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200 shadow-inner">
+              <button
+                onClick={() => onViewChange('SOFA')}
+                className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${activeView === 'SOFA' ? 'bg-white text-blue-600 shadow-sm border border-slate-100' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                FutureMaxSofa
+              </button>
+              <button
+                onClick={() => onViewChange('RISK')}
+                className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${activeView === 'RISK' ? 'bg-white text-blue-600 shadow-sm border border-slate-100' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                OrganDeteriorationRisk
+              </button>
             </div>
 
-            {/* Gap Window */}
+            {/* Gap Window (Forecast Horizon) */}
             <div className="flex items-center gap-1 text-xs font-medium text-slate-500">
               <span className="hidden sm:inline uppercase tracking-wider text-[10px]">Forecast Horizon</span>
               <div className="flex bg-white rounded-lg border border-slate-200 overflow-hidden">

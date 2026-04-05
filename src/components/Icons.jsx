@@ -25,7 +25,9 @@ export const Play = ({ className }) => <svg className={className} viewBox="0 0 2
 export const Pause = ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>;
 export const FastForward = ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 19 22 12 13 5 13 19" /><polygon points="2 19 11 12 2 5 2 19" /></svg>;
 export const SkipForward = ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" /></svg>;
+export const ShieldCheck = ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" /><path d="m9 12 2 2 4-4" /></svg>;
+export const AlertCircle = ({ className }) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>;
 
 // Icon lookup by string name
-const ICON_MAP = { Heart, Activity, Thermometer, Wind, Brain, Droplets, ShieldAlert, AlertTriangle, Clock, ChevronDown, User, TrendingUp, TrendingDown, Minus, Sparkles, Loader, SkipBack, Rewind, Play, Pause, FastForward, SkipForward };
+const ICON_MAP = { Heart, Activity, Thermometer, Wind, Brain, Droplets, ShieldAlert, AlertTriangle, Clock, ChevronDown, User, TrendingUp, TrendingDown, Minus, Sparkles, Loader, SkipBack, Rewind, Play, Pause, FastForward, SkipForward, ShieldCheck, AlertCircle };
 export function getIcon(name) { return ICON_MAP[name] || Activity; }

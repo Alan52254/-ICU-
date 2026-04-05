@@ -140,8 +140,14 @@ export default function SofaChart({ sofaData, insights, gap, selectedHour, onHou
     );
   }
 
-  const WINDOW_SIZE = 36;
-  const windowStartIdx = Math.max(0, Math.min(maxIndex - WINDOW_SIZE, Math.floor(Math.max(0, currentIndex - WINDOW_SIZE / 2))));
+  // Increase WINDOW_SIZE to ensure long horizons (24h) aren't clipped
+  const WINDOW_SIZE = 48;
+  
+  // Adaptive window: Center on current hour, but shift to include targetEnd if nearby
+  const targetEnd = insights?.target_end_hour || 0;
+  const idealCenter = targetEnd > currentIndex ? (currentIndex + targetEnd) / 2 : currentIndex;
+  
+  const windowStartIdx = Math.max(0, Math.min(maxIndex - WINDOW_SIZE, Math.floor(Math.max(0, idealCenter - WINDOW_SIZE / 2))));
   const chartData = allData.length <= WINDOW_SIZE
     ? allData
     : allData.slice(windowStartIdx, windowStartIdx + WINDOW_SIZE);

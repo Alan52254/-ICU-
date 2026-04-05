@@ -10,6 +10,8 @@ import OrganTrendRegistry from './components/OrganTrendRegistry';
 import ClinicalInsights from './components/ClinicalInsights';
 import { Loader } from './components/Icons';
 import { normalizeInsights } from './lib/sofaDatasetAdapter';
+import { debugStateValidator } from './lib/dataHelper';
+import OrganRiskView from './components/clinical/OrganRiskView';
 
 export default function App() {
   // ─── Global state ───
@@ -29,6 +31,9 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [serverReady, setServerReady] = useState(false);
   const [error, setError] = useState(null);
+  
+  // ─── Routing State ───
+  const [activeView, setActiveView] = useState('SOFA'); // SOFA | RISK
 
   // 🎯 這是控制 Drill-down 切換的核心狀態
   const [selectedTarget, setSelectedTarget] = useState('TOTAL');
@@ -100,6 +105,13 @@ export default function App() {
     }
   }, [selectedStayId, gap]);
 
+  // 1.2 建立 Dev Validator
+  useEffect(() => {
+    if (serverReady && overview && insights) {
+      debugStateValidator(selectedStayId, selectedHour, gap, insights);
+    }
+  }, [serverReady, selectedStayId, selectedHour, gap, insights, overview]);
+
   const isCritical = insights && insights.trend?.code === 1 && insights.actualSofa >= 10;
   const riskLevel = insights ? getRiskLevel(insights.actualSofa) : null;
 
@@ -126,8 +138,8 @@ export default function App() {
         onSelectPatient={setSelectedStayId}
         gap={gap}
         onGapChange={setGap}
-        timeWindow={timeWindow}
-        onTimeWindowChange={setTimeWindow}
+        activeView={activeView}
+        onViewChange={setActiveView}
         riskLevel={riskLevel}
         selectedHour={selectedHour}
         overview={overview}
@@ -144,7 +156,7 @@ export default function App() {
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             <div className="skeleton h-64" /><div className="skeleton h-64 lg:col-span-2" /><div className="skeleton h-64" />
           </div>
-        ) : (
+        ) : activeView === 'SOFA' ? (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* 左側邊欄 */}
             <div className="lg:col-span-3 space-y-5">
@@ -174,7 +186,6 @@ export default function App() {
 
             {/* 右側資訊卡 */}
             <div className="lg:col-span-3 space-y-5">
-              {/* 🚨 關鍵就在這幾行！如果你自己改沒成功，通常是因為這裡沒對應好 */}
               <OrganBreakdown
                 insights={insights}
                 gap={gap}
@@ -183,6 +194,12 @@ export default function App() {
               <ClinicalInsights insights={insights} gap={gap} />
             </div>
           </div>
+        ) : (
+          <OrganRiskView 
+            sofaData={sofaData} 
+            selectedHour={selectedHour} 
+            gap={gap} 
+          />
         )}
 
         <div className="mt-10 border-t border-slate-200 pt-4 text-center">
