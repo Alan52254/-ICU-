@@ -4,17 +4,14 @@ import {
   ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import { Activity, Play, Pause, SkipBack, Rewind, FastForward, SkipForward } from './Icons';
+import { SOFA_ORGAN_MAP } from '../lib/fieldMapping';
 
 function CustomTooltip({ active, payload, label }) {
   if (!active || !payload || payload.length === 0) return null;
-
-  // Extract custom payload data
   const data = payload[0].payload;
-
   return (
     <div className="bg-white/95 backdrop-blur-sm border border-slate-200 rounded-xl p-3 shadow-lg text-xs">
       <p className="font-bold text-slate-700 mb-1.5 font-mono">Hour {label}</p>
-
       {data.actual != null && (
         <div className="flex items-center gap-2 mb-0.5">
           <span className="w-2 h-2 rounded-full bg-blue-600" />
@@ -22,7 +19,6 @@ function CustomTooltip({ active, payload, label }) {
           <span className="font-bold font-mono text-blue-600">{data.actual}</span>
         </div>
       )}
-
       {data.predicted != null && (
         <>
           <div className="flex items-center gap-2 mb-0.5">
@@ -43,10 +39,10 @@ function CustomTooltip({ active, payload, label }) {
   );
 }
 
-export default function SofaChart({ sofaData, insights, gap, selectedHour, onHourChange }) {
-  // ─── Playback & Data State ───
+export default function SofaChart({ sofaData, insights, gap, selectedHour, onHourChange, selectedTarget, onTargetChange }) {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [speed, setSpeed] = useState(1); // 1x, 2x, 4x
+  const [speed, setSpeed] = useState(1);
+  const isTotal = !selectedTarget || selectedTarget === 'TOTAL';
 
   const allData = useMemo(() => {
     if (!sofaData || sofaData.length === 0) return [];
@@ -63,23 +59,38 @@ export default function SofaChart({ sofaData, insights, gap, selectedHour, onHou
     for (let h = 0; h <= maxHour; h++) {
       const row = sofaData.find(d => Number(d.hour_idx) === h);
 
-      // Actual: Blue line up to selectedHour
-      const actual = (h <= selectedHour && row) ? Number(row.sofa) : null;
+      // 【優化 1：嚴謹的 NaN 防禦處理】
+      let actual = null;
+      if (h <= selectedHour && row) {
+        if (isTotal) {
+          const totalVal = Number(row.sofa);
+          actual = Number.isFinite(totalVal) ? totalVal : null;
+        } else {
+          const csvField = SOFA_ORGAN_MAP[selectedTarget]?.csvActual;
+          const rawVal = csvField ? row[csvField] : null;
+          const organVal = rawVal != null ? Number(rawVal) : null;
+          actual = Number.isFinite(organVal) ? organVal : null;
+        }
+      }
 
-      // Predictions: Horizontal lines in the forecast window
       let predicted = null;
       let targetTrue = null;
+
       if (targetStart != null && targetEnd != null && h >= targetStart && h <= targetEnd) {
-        predicted = predTotal;
-        targetTrue = trueTotal;
+        predicted = isTotal
+          ? predTotal
+          : insights?.organPredictions?.[selectedTarget]?.future_max_pred;
+
+        targetTrue = isTotal
+          ? trueTotal
+          : insights?.organPredictions?.[selectedTarget]?.future_max_true;
       }
 
       series.push({ hour: h, actual, predicted, true_val: targetTrue });
     }
     return series;
-  }, [sofaData, selectedHour, insights]);
+  }, [sofaData, selectedHour, insights, isTotal, selectedTarget]);
 
-  // Determine current index based on selectedHour
   const currentIndex = useMemo(() => {
     if (!allData.length || selectedHour == null) return 0;
     const idx = allData.findIndex(d => d.hour === selectedHour);
@@ -87,22 +98,18 @@ export default function SofaChart({ sofaData, insights, gap, selectedHour, onHou
   }, [allData, selectedHour]);
 
   const maxIndex = allData.length - 1;
-
-  // Track playback state in a ref to avoid resetting the interval on every tick
   const playbackRef = useRef({ currentIndex, maxIndex, allData, onHourChange });
+
   useEffect(() => {
     playbackRef.current = { currentIndex, maxIndex, allData, onHourChange };
   }, [currentIndex, maxIndex, allData, onHourChange]);
 
-  // Stop playing if we reach the end
   useEffect(() => {
     if (currentIndex >= maxIndex && isPlaying) setIsPlaying(false);
   }, [currentIndex, maxIndex, isPlaying]);
 
-  // Playback Effect
   useEffect(() => {
     if (!isPlaying) return;
-
     const tickMs = 1000 / speed;
     const timer = setInterval(() => {
       const { currentIndex: cur, maxIndex: m, allData: data, onHourChange: change } = playbackRef.current;
@@ -113,14 +120,11 @@ export default function SofaChart({ sofaData, insights, gap, selectedHour, onHou
         setIsPlaying(false);
       }
     }, tickMs);
-
     return () => clearInterval(timer);
   }, [isPlaying, speed]);
 
-  // Stop playback when the component unmounts or data changes drastically
-  useEffect(() => { setIsPlaying(false); }, [sofaData]);
+  useEffect(() => { setIsPlaying(false); }, [sofaData, selectedTarget]);
 
-  // Interaction handlers
   const handlePlayPause = () => setIsPlaying(p => !p);
   const jumpStart = () => { setIsPlaying(false); if (allData[0]) onHourChange(allData[0].hour); };
   const jumpEnd = () => { setIsPlaying(false); if (allData[maxIndex]) onHourChange(allData[maxIndex].hour); };
@@ -136,42 +140,59 @@ export default function SofaChart({ sofaData, insights, gap, selectedHour, onHou
     );
   }
 
-  // To keep the chart sliding automatically based on selectedHour:
-  // We'll show a moving window of 36 hours centered around the selected hour
   const WINDOW_SIZE = 36;
   const windowStartIdx = Math.max(0, Math.min(maxIndex - WINDOW_SIZE, Math.floor(Math.max(0, currentIndex - WINDOW_SIZE / 2))));
-
   const chartData = allData.length <= WINDOW_SIZE
     ? allData
     : allData.slice(windowStartIdx, windowStartIdx + WINDOW_SIZE);
 
+  const yAxisDomain = isTotal ? [0, 24] : [0, 4];
+  const chartTitle = isTotal
+    ? '總 SOFA 主圖'
+    : SOFA_ORGAN_MAP[selectedTarget]?.chartLabel || '器官趨勢圖';
+
   return (
-    <div className="medical-card p-5">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-3">
+    <div className="medical-card p-5 bg-white shadow-sm border border-slate-100 rounded-2xl">
+      <div className="flex flex-wrap items-center justify-between mb-4 gap-3">
         <div className="flex items-center gap-2">
           <Activity className="w-5 h-5 text-blue-600" />
-          <h3 className="text-sm md:text-base font-bold text-slate-800">總 SOFA 主圖</h3>
-          <span className="text-[10px] text-slate-400 font-mono uppercase ml-1">
-            Actual vs Predicted
-          </span>
+          <h3 className="text-sm md:text-base font-bold text-slate-800">{chartTitle}</h3>
         </div>
-        <div className="flex items-center gap-4 text-[10px]">
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-0.5 bg-blue-600 rounded" /> 實值
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span style={{ display: 'inline-block', width: 12, height: 0, borderTop: '2px dashed #F97316' }} />
-            <span className="ml-1">預測值</span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span style={{ display: 'inline-block', width: 12, height: 0, borderTop: '2px dashed #10B981' }} />
-            <span className="ml-1">未來真值</span>
-          </span>
+
+        <div className="flex bg-slate-50 p-1 rounded-lg border border-slate-100 shadow-inner">
+          {/* 【優化 2：Optional Chaining 防呆】 */}
+          <button
+            onClick={() => onTargetChange?.('TOTAL')}
+            className={`px-3 py-1.5 text-[10px] font-bold rounded-md transition-all ${isTotal ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            總覽
+          </button>
+          {Object.entries(SOFA_ORGAN_MAP).map(([key, cfg]) => (
+            <button
+              key={key}
+              onClick={() => onTargetChange?.(key)}
+              className={`px-3 py-1.5 text-[10px] font-bold rounded-md transition-all ${selectedTarget === key ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              {cfg.labelZh}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Chart */}
+      <div className="flex items-center justify-end gap-4 text-[10px] mb-2 mr-2">
+        <span className="flex items-center gap-1.5">
+          <span className="w-3 h-0.5 bg-blue-600 rounded" /> 實值
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span style={{ display: 'inline-block', width: 12, height: 0, borderTop: '2px dashed #F97316' }} />
+          <span className="ml-1">預測值</span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span style={{ display: 'inline-block', width: 12, height: 0, borderTop: '2px dashed #10B981' }} />
+          <span className="ml-1">未來真值</span>
+        </span>
+      </div>
+
       <ResponsiveContainer width="100%" height={260}>
         <LineChart
           data={chartData}
@@ -193,7 +214,7 @@ export default function SofaChart({ sofaData, insights, gap, selectedHour, onHou
           <YAxis
             tick={{ fill: '#94A3B8', fontSize: 10, fontFamily: 'JetBrains Mono' }}
             axisLine={{ stroke: '#CBD5E1' }}
-            domain={[0, 'auto']}
+            domain={yAxisDomain}
           />
           <Tooltip content={<CustomTooltip />} />
 
@@ -215,32 +236,17 @@ export default function SofaChart({ sofaData, insights, gap, selectedHour, onHou
         </LineChart>
       </ResponsiveContainer>
 
-      {/* ─── Timeline Player (Interactive UI) ─── */}
       <div className="mt-2 bg-slate-50 border border-slate-100 rounded-xl p-3 flex flex-col gap-3">
-        {/* Playback Controls & Info */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
-            <button onClick={jumpStart} className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors" title="回到起點">
-              <SkipBack className="w-4 h-4" />
-            </button>
-            <button onClick={stepPrev} className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors" title="上一步">
-              <Rewind className="w-4 h-4" />
-            </button>
-            <button
-              onClick={handlePlayPause}
-              className={`p-1.5 rounded-md transition-colors ${isPlaying ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
-              title={isPlaying ? '暫停' : '自動播放'}
-            >
+            <button onClick={jumpStart} className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors"><SkipBack className="w-4 h-4" /></button>
+            <button onClick={stepPrev} className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors"><Rewind className="w-4 h-4" /></button>
+            <button onClick={handlePlayPause} className={`p-1.5 rounded-md transition-colors ${isPlaying ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
               {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
             </button>
-            <button onClick={stepNext} className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors" title="下一步">
-              <FastForward className="w-4 h-4" />
-            </button>
-            <button onClick={jumpEnd} className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors" title="跳至終點">
-              <SkipForward className="w-4 h-4" />
-            </button>
+            <button onClick={stepNext} className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors"><FastForward className="w-4 h-4" /></button>
+            <button onClick={jumpEnd} className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors"><SkipForward className="w-4 h-4" /></button>
           </div>
-
           <div className="flex items-center gap-3">
             <div className="text-center">
               <span className="text-[10px] text-slate-400 uppercase tracking-wider font-bold block mb-0.5">時間點</span>
@@ -253,30 +259,12 @@ export default function SofaChart({ sofaData, insights, gap, selectedHour, onHou
             </button>
           </div>
         </div>
-
-        {/* Timeline Slider Indicator */}
         <div className="px-1 flex items-center gap-3">
           <span className="text-[10px] text-slate-400 font-mono">H.{allData[0]?.hour}</span>
-          <input
-            type="range"
-            min={0}
-            max={maxIndex}
-            value={currentIndex}
-            onChange={(e) => {
-              setIsPlaying(false);
-              const idx = Number(e.target.value);
-              onHourChange(allData[idx]?.hour);
-            }}
-            className="flex-1 h-1.5 rounded-full appearance-none cursor-pointer bg-slate-200"
-            style={{ accentColor: '#2563EB' }}
-          />
+          <input type="range" min={0} max={maxIndex} value={currentIndex} onChange={(e) => { setIsPlaying(false); onHourChange(allData[Number(e.target.value)]?.hour); }} className="flex-1 h-1.5 rounded-full appearance-none cursor-pointer bg-slate-200" style={{ accentColor: '#2563EB' }} />
           <span className="text-[10px] text-slate-400 font-mono">H.{allData[maxIndex]?.hour}</span>
         </div>
       </div>
-
-      <p className="text-[10px] text-center text-slate-400/60 italic mt-3">
-        * 預測線於資料尾端停止，因未來視窗 [{gap}h horizon] 不完整時不產生預測值
-      </p>
     </div>
   );
 }

@@ -23,12 +23,15 @@ export default function App() {
   const [overview, setOverview] = useState(null);
   const [vitals, setVitals] = useState([]);
   const [sofaData, setSofaData] = useState([]);
-  const [insights, setInsights] = useState(null); // Will hold normalized insights
+  const [insights, setInsights] = useState(null);
 
   // ─── UI state ───
   const [loading, setLoading] = useState(true);
   const [serverReady, setServerReady] = useState(false);
   const [error, setError] = useState(null);
+
+  // 🎯 這是控制 Drill-down 切換的核心狀態
+  const [selectedTarget, setSelectedTarget] = useState('TOTAL');
 
   // Check server health
   useEffect(() => {
@@ -39,7 +42,7 @@ export default function App() {
           setServerReady(true);
           return;
         }
-      } catch {}
+      } catch { }
       setTimeout(check, 2000);
     };
     check();
@@ -97,7 +100,6 @@ export default function App() {
     }
   }, [selectedStayId, gap]);
 
-  // Determine if critical state
   const isCritical = insights && insights.trend?.code === 1 && insights.actualSofa >= 10;
   const riskLevel = insights ? getRiskLevel(insights.actualSofa) : null;
 
@@ -109,7 +111,6 @@ export default function App() {
           <Loader className="w-10 h-10 text-blue-600 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-slate-800 mb-2">ICU SOFA 監測系統</h2>
           <p className="text-slate-500 text-sm">正在載入及預處理預測資料...</p>
-          <p className="text-slate-400 text-xs mt-3 font-mono">Caching multiple patient datasets</p>
         </div>
       </div>
     );
@@ -145,12 +146,12 @@ export default function App() {
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Left sidebar */}
+            {/* 左側邊欄 */}
             <div className="lg:col-span-3 space-y-5">
               <PatientOverview overview={overview} vitals={vitals} selectedHour={selectedHour} />
             </div>
 
-            {/* Center — Main Chart & Organ Status */}
+            {/* 中央主視覺 */}
             <div className="lg:col-span-6 space-y-5">
               <VitalsHero vitals={vitals} selectedHour={selectedHour} />
 
@@ -160,6 +161,8 @@ export default function App() {
                 gap={gap}
                 selectedHour={selectedHour}
                 onHourChange={handleHourChange}
+                selectedTarget={selectedTarget}
+                onTargetChange={setSelectedTarget}
               />
 
               <OrganTrendRegistry
@@ -169,19 +172,22 @@ export default function App() {
               />
             </div>
 
-            {/* Right sidebar — Cards */}
+            {/* 右側資訊卡 */}
             <div className="lg:col-span-3 space-y-5">
-              <OrganBreakdown insights={insights} gap={gap} />
+              {/* 🚨 關鍵就在這幾行！如果你自己改沒成功，通常是因為這裡沒對應好 */}
+              <OrganBreakdown
+                insights={insights}
+                gap={gap}
+                selectedTarget={selectedTarget}
+              />
               <ClinicalInsights insights={insights} gap={gap} />
             </div>
           </div>
         )}
 
-        {/* Disclaimer */}
         <div className="mt-10 border-t border-slate-200 pt-4 text-center">
           <p className="text-slate-400 text-xs leading-relaxed max-w-3xl mx-auto">
             ⚠ <strong>原型聲明</strong>：此為教學與作品集展示用途之前端原型。未連接實際病人資料、醫療設備或臨床決策支援系統。
-            不適用於臨床實務，所有分析均為模擬。未符合 HIPAA、GDPR 或任何醫療器材法規。
           </p>
         </div>
       </main>
