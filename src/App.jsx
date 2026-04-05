@@ -64,6 +64,10 @@ export default function App() {
       .catch(e => setError(e.message));
   }, [serverReady]);
 
+  // ─── Playback State (Shared) ───
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+
   // Unified data loader
   const loadPatientData = useCallback(async (stayId, gapVal, tw) => {
     if (!stayId) return;
@@ -79,10 +83,10 @@ export default function App() {
       setVitals(vit);
       setSofaData(sofa);
 
-      const maxHour = sofa.length > 0 ? Number(sofa[sofa.length - 1].hour_idx) : 0;
-      setSelectedHour(maxHour);
+      const initialHour = 0;
+      setSelectedHour(initialHour);
 
-      const insRaw = await fetchPatientInsights(stayId, gapVal, maxHour);
+      const insRaw = await fetchPatientInsights(stayId, gapVal, initialHour);
       setInsights(normalizeInsights(insRaw));
     } catch (e) {
       setError(e.message);
@@ -104,6 +108,52 @@ export default function App() {
       console.error('Failed to update insights on hour change:', err);
     }
   }, [selectedStayId, gap]);
+
+  // 🏥 全域播放控制器 (Global Playback Timer)
+  useEffect(() => {
+    if (!isPlaying || !sofaData.length) return;
+
+    const tickMs = 1000 / playbackSpeed;
+    const timer = setInterval(() => {
+      // 找出當前 hour 在 sofaData 中的 index
+      const maxIndex = sofaData.length - 1;
+      const currentIndex = sofaData.findIndex(d => Number(d.hour_idx) === selectedHour);
+      
+      const nextIdx = currentIndex + 1;
+      if (nextIdx <= maxIndex) {
+        handleHourChange(sofaData[nextIdx].hour_idx);
+      } else {
+        // Keep playback active while pinning to the final hour.
+        return;
+      }
+    }, tickMs);
+
+    return () => clearInterval(timer);
+  }, [isPlaying, playbackSpeed, selectedHour, sofaData, handleHourChange]);
+
+  // 停止播放的情境：切換病患
+  useEffect(() => { setIsPlaying(false); }, [selectedStayId]);
+
+  // 播放控制 Actions
+  const playbackActions = {
+    play: () => setIsPlaying(true),
+    pause: () => setIsPlaying(false),
+    toggle: () => setIsPlaying(p => !p),
+    setSpeed: (s) => setPlaybackSpeed(s),
+    cycleSpeed: () => setPlaybackSpeed(s => (s === 1 ? 2 : s === 2 ? 4 : 1)),
+    jumpStart: () => { setIsPlaying(false); if (sofaData[0]) handleHourChange(sofaData[0].hour_idx); },
+    jumpEnd: () => { setIsPlaying(false); if (sofaData.length) handleHourChange(sofaData[sofaData.length - 1].hour_idx); },
+    stepNext: () => { 
+      setIsPlaying(false); 
+      const idx = sofaData.findIndex(d => Number(d.hour_idx) === selectedHour);
+      if (idx < sofaData.length - 1) handleHourChange(sofaData[idx + 1].hour_idx); 
+    },
+    stepPrev: () => { 
+      setIsPlaying(false); 
+      const idx = sofaData.findIndex(d => Number(d.hour_idx) === selectedHour);
+      if (idx > 0) handleHourChange(sofaData[idx - 1].hour_idx); 
+    }
+  };
 
   // 1.2 建立 Dev Validator
   useEffect(() => {
@@ -175,6 +225,10 @@ export default function App() {
                 onHourChange={handleHourChange}
                 selectedTarget={selectedTarget}
                 onTargetChange={setSelectedTarget}
+                // 全域播放器 Props
+                isPlaying={isPlaying}
+                playbackSpeed={playbackSpeed}
+                playbackActions={playbackActions}
               />
 
               <OrganTrendRegistry

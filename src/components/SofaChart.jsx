@@ -39,9 +39,19 @@ function CustomTooltip({ active, payload, label }) {
   );
 }
 
-export default function SofaChart({ sofaData, insights, gap, selectedHour, onHourChange, selectedTarget, onTargetChange }) {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [speed, setSpeed] = useState(1);
+export default function SofaChart({ 
+  sofaData, 
+  insights, 
+  gap, 
+  selectedHour, 
+  onHourChange, 
+  selectedTarget, 
+  onTargetChange,
+  // 全域播放器 Props
+  isPlaying,
+  playbackSpeed,
+  playbackActions
+}) {
   const isTotal = !selectedTarget || selectedTarget === 'TOTAL';
 
   const allData = useMemo(() => {
@@ -98,39 +108,15 @@ export default function SofaChart({ sofaData, insights, gap, selectedHour, onHou
   }, [allData, selectedHour]);
 
   const maxIndex = allData.length - 1;
-  const playbackRef = useRef({ currentIndex, maxIndex, allData, onHourChange });
 
-  useEffect(() => {
-    playbackRef.current = { currentIndex, maxIndex, allData, onHourChange };
-  }, [currentIndex, maxIndex, allData, onHourChange]);
+  // Interaction handlers - Mapping to global actions
+  const handlePlayPause = () => playbackActions.toggle();
+  const jumpStart = () => playbackActions.jumpStart();
+  const jumpEnd = () => playbackActions.jumpEnd();
+  const stepPrev = () => playbackActions.stepPrev();
+  const stepNext = () => playbackActions.stepNext();
+  const cycleSpeed = () => playbackActions.cycleSpeed();
 
-  useEffect(() => {
-    if (currentIndex >= maxIndex && isPlaying) setIsPlaying(false);
-  }, [currentIndex, maxIndex, isPlaying]);
-
-  useEffect(() => {
-    if (!isPlaying) return;
-    const tickMs = 1000 / speed;
-    const timer = setInterval(() => {
-      const { currentIndex: cur, maxIndex: m, allData: data, onHourChange: change } = playbackRef.current;
-      const nextIdx = cur + 1;
-      if (nextIdx <= m) {
-        change(data[nextIdx].hour);
-      } else {
-        setIsPlaying(false);
-      }
-    }, tickMs);
-    return () => clearInterval(timer);
-  }, [isPlaying, speed]);
-
-  useEffect(() => { setIsPlaying(false); }, [sofaData, selectedTarget]);
-
-  const handlePlayPause = () => setIsPlaying(p => !p);
-  const jumpStart = () => { setIsPlaying(false); if (allData[0]) onHourChange(allData[0].hour); };
-  const jumpEnd = () => { setIsPlaying(false); if (allData[maxIndex]) onHourChange(allData[maxIndex].hour); };
-  const stepPrev = () => { setIsPlaying(false); if (currentIndex > 0) onHourChange(allData[currentIndex - 1].hour); };
-  const stepNext = () => { setIsPlaying(false); if (currentIndex < maxIndex) onHourChange(allData[currentIndex + 1].hour); };
-  const cycleSpeed = () => setSpeed(s => (s === 1 ? 2 : s === 2 ? 4 : 1));
 
   if (allData.length === 0) {
     return (
@@ -247,11 +233,23 @@ export default function SofaChart({ sofaData, insights, gap, selectedHour, onHou
           <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
             <button onClick={jumpStart} className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors"><SkipBack className="w-4 h-4" /></button>
             <button onClick={stepPrev} className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors"><Rewind className="w-4 h-4" /></button>
-            <button onClick={handlePlayPause} className={`p-1.5 rounded-md transition-colors ${isPlaying ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
+            <button 
+              onClick={handlePlayPause} 
+              disabled={currentIndex >= maxIndex && !isPlaying}
+              className={`p-1.5 rounded-md transition-all ${isPlaying ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'bg-blue-600 text-white hover:bg-blue-700'} ${currentIndex >= maxIndex && !isPlaying ? 'opacity-40 cursor-not-allowed grayscale' : ''}`}
+            >
               {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
             </button>
-            <button onClick={stepNext} className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors"><FastForward className="w-4 h-4" /></button>
-            <button onClick={jumpEnd} className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors"><SkipForward className="w-4 h-4" /></button>
+            <button 
+              onClick={stepNext} 
+              disabled={currentIndex >= maxIndex}
+              className={`p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors ${currentIndex >= maxIndex ? 'opacity-30 cursor-not-allowed' : ''}`}
+            ><FastForward className="w-4 h-4" /></button>
+            <button 
+              onClick={jumpEnd} 
+              disabled={currentIndex >= maxIndex}
+              className={`p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors ${currentIndex >= maxIndex ? 'opacity-30 cursor-not-allowed' : ''}`}
+            ><SkipForward className="w-4 h-4" /></button>
           </div>
           <div className="flex items-center gap-3">
             <div className="text-center">
@@ -261,13 +259,13 @@ export default function SofaChart({ sofaData, insights, gap, selectedHour, onHou
             <div className="h-6 w-px bg-slate-200 mx-1 border-r border-white" />
             <button onClick={cycleSpeed} className="flex flex-col items-center justify-center px-3 py-1 rounded bg-white border border-slate-200 hover:bg-slate-50 transition-colors shadow-sm">
               <span className="text-[9px] text-slate-400 uppercase tracking-widest font-bold block">Speed</span>
-              <span className="text-xs font-bold text-slate-700 font-mono">{speed}x</span>
+              <span className="text-xs font-bold text-slate-700 font-mono">{playbackSpeed}x</span>
             </button>
           </div>
         </div>
         <div className="px-1 flex items-center gap-3">
           <span className="text-[10px] text-slate-400 font-mono">H.{allData[0]?.hour}</span>
-          <input type="range" min={0} max={maxIndex} value={currentIndex} onChange={(e) => { setIsPlaying(false); onHourChange(allData[Number(e.target.value)]?.hour); }} className="flex-1 h-1.5 rounded-full appearance-none cursor-pointer bg-slate-200" style={{ accentColor: '#2563EB' }} />
+          <input type="range" min={0} max={maxIndex} value={currentIndex} onChange={(e) => { playbackActions.pause(); onHourChange(allData[Number(e.target.value)]?.hour); }} className="flex-1 h-1.5 rounded-full appearance-none cursor-pointer bg-slate-200" style={{ accentColor: '#2563EB' }} />
           <span className="text-[10px] text-slate-400 font-mono">H.{allData[maxIndex]?.hour}</span>
         </div>
       </div>

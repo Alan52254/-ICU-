@@ -8,8 +8,9 @@ export default function PatientOverview({ overview, vitals, selectedHour }) {
     return <div className="medical-card p-5"><p className="text-slate-400 text-sm">無病人資料</p></div>;
   }
 
-  const icuHours = vitals?.length || 0;
-  const lastVital = vitals?.find(v => v.hour_idx === selectedHour) || vitals?.[vitals.length - 1];
+  // Show current selected hour instead of total vitals length
+  const icuHours = selectedHour ?? (vitals?.length || 0);
+  const lastVital = vitals?.find(v => Number(v.hour_idx) === selectedHour) || vitals?.[vitals.length - 1];
 
   // Quick clinical summary
   const summaryItems = useMemo(() => {
