@@ -48,7 +48,7 @@ function buildSnapshotSeries(rows, selectedOrgan, selectedHour, gap) {
     .sort((a, b) => a.hour_t - b.hour_t);
 
   if (filtered.length === 0) {
-    return { chartData: [], windowStart: null, windowEnd: null };
+    return { chartData: [], windowStart: null, windowEnd: null, maxHour: 0 };
   }
 
   const snapshotRow =
@@ -67,15 +67,19 @@ function buildSnapshotSeries(rows, selectedOrgan, selectedHour, gap) {
 
   const chartData = [];
   for (let hour = 0; hour <= maxHour; hour += 1) {
+    const isPast = hour <= safeHour;
     const inWindow = hour >= windowStart && hour <= windowEnd;
+    const historyRow = isPast ? filtered.find((row) => row.hour_t === hour) : null;
+
     chartData.push({
       hour_t: hour,
+      history_pred: isPast ? historyRow?.pred_prob ?? null : null,
       future_pred: inWindow ? snapshotRow?.pred_prob ?? null : null,
-      future_true_track: inWindow ? (snapshotRow?.true_label === 1 ? 0.95 : 0.05) : null,
+      future_true: inWindow ? snapshotRow?.true_label ?? null : null,
     });
   }
 
-  return { chartData, windowStart, windowEnd };
+  return { chartData, windowStart, windowEnd, maxHour };
 }
 
 function CustomTooltip({ active, payload, label, selectedHour }) {
@@ -99,8 +103,8 @@ function CustomTooltip({ active, payload, label, selectedHour }) {
           </div>
           <div className="flex items-center justify-between gap-4">
             <span className="text-slate-500">真實標籤</span>
-            <span className={`font-mono font-bold ${row.future_true_track === 0.95 ? 'text-emerald-600' : 'text-slate-500'}`}>
-              {row.future_true_track != null ? (row.future_true_track === 0.95 ? '1' : '0') : '-'}
+            <span className={`font-mono font-bold ${row.future_true === 1 ? 'text-emerald-600' : 'text-slate-500'}`}>
+              {row.future_true != null ? row.future_true : '-'}
             </span>
           </div>
         </div>
@@ -116,29 +120,20 @@ export default function RiskDeteriorationChart({ rows = [], selectedHour, select
   const safeGap = toNumber(gap, 4);
   const organLabel = getOrganLabel(selectedOrgan);
 
-  const { chartData, windowStart, windowEnd } = useMemo(
+  const { chartData, windowStart, windowEnd, maxHour } = useMemo(
     () => buildSnapshotSeries(rows, selectedOrgan, safeHour, safeGap),
     [rows, selectedOrgan, safeHour, safeGap],
   );
 
   const xTicks = useMemo(() => {
     if (!chartData.length) return [];
-
-    const hourList = chartData.map((row) => row.hour_t);
-    const maxHour =
-      hourList.length > 0
-        ? Math.max(...hourList, windowEnd ?? 0, safeHour)
-        : Math.max(windowEnd ?? 0, safeHour);
     const tickStep = maxHour >= 96 ? 12 : maxHour >= 48 ? 8 : 4;
-
     const ticks = [];
     for (let hour = 0; hour <= maxHour; hour += tickStep) {
       ticks.push(hour);
     }
     return ticks;
-  }, [chartData, safeHour, windowEnd]);
-
-  const xDomain = [Math.max(0, safeHour - 24), Math.max(48, safeHour + safeGap + 12)];
+  }, [chartData.length, maxHour]);
 
   if (chartData.length === 0) {
     return (
@@ -171,7 +166,7 @@ export default function RiskDeteriorationChart({ rows = [], selectedHour, select
           <XAxis
             dataKey="hour_t"
             type="number"
-            domain={xDomain}
+            domain={[0, maxHour]}
             ticks={xTicks}
             interval={0}
             minTickGap={15}
@@ -186,8 +181,7 @@ export default function RiskDeteriorationChart({ rows = [], selectedHour, select
           />
 
           <YAxis
-            yAxisId="left"
-            domain={[0, 1]}
+            domain={[-0.1, 1.1]}
             tick={{ fill: '#94A3B8', fontSize: 11, fontFamily: 'JetBrains Mono' }}
             axisLine={{ stroke: '#E2E8F0' }}
             ticks={[0, 0.2, 0.4, 0.6, 0.8, 1]}
@@ -200,8 +194,9 @@ export default function RiskDeteriorationChart({ rows = [], selectedHour, select
               x1={windowStart}
               x2={windowEnd}
               fill="#EEF2FF"
-              fillOpacity={0.18}
-              stroke="#C7D2FE"
+              fillOpacity={0.3}
+              stroke="#818CF8"
+              strokeWidth={1}
               strokeDasharray="3 3"
               strokeOpacity={1}
               label={{
@@ -214,12 +209,11 @@ export default function RiskDeteriorationChart({ rows = [], selectedHour, select
             />
           )}
 
-          <ReferenceLine yAxisId="left" x={safeHour} stroke="#3B82F6" strokeDasharray="4 4" strokeWidth={2} isFront>
+          <ReferenceLine x={safeHour} stroke="#3B82F6" strokeDasharray="4 4" strokeWidth={2} isFront>
             <Label value="NOW" position="top" fill="#3B82F6" fontSize={11} fontWeight="bold" />
           </ReferenceLine>
 
           <Line
-            yAxisId="left"
             type="linear"
             dataKey="future_pred"
             stroke="#F97316"
@@ -231,9 +225,8 @@ export default function RiskDeteriorationChart({ rows = [], selectedHour, select
           />
 
           <Line
-            yAxisId="left"
             type="linear"
-            dataKey="future_true_track"
+            dataKey="future_true"
             stroke="#10B981"
             strokeWidth={2.5}
             strokeDasharray="6 6"
