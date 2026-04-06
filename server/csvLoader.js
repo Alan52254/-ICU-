@@ -6,6 +6,7 @@ import Papa from 'papaparse';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.resolve(__dirname, '..');
+const DETERIORATION_DIR = path.resolve(__dirname, 'data', 'deterioration');
 
 // ─── In-memory data stores ───
 let patientIndex = new Map();   // stay_id → { gender, age, ... }
@@ -13,6 +14,8 @@ let vitalsIndex = new Map();    // stay_id → [ { hour_idx, hr, map, ... } ]
 let sofaIndex = new Map();      // stay_id → [ { hour_idx, sofa, sofa_resp, ... } ]
 // futureIndex: `${stay_id}|${hour_t}|${horizon}` → { resp:{pred,true,curr}, coag:{...}, ... }
 let futureIndex = new Map();
+let deteriorationFileMap = new Map();
+let deteriorationIndex = new Map(); // stay_id → [ rows ]
 let stayIds = [];
 let loadingComplete = false;
 
@@ -87,6 +90,106 @@ function normalizeId(row) {
   const raw = row.stay_id !== undefined ? row.stay_id : row.patient_id;
   if (raw === undefined || raw === null || raw === '') return null;
   return String(raw);
+}
+
+function extractPatientIdFromFilename(fileName) {
+  const patterns = [
+    /patient_(\d+)_/i,                          // Format 1: patient_{pid}_...
+    /testidx_\d+_pid_(\d+)_/i,                 // Format 2: testidx_{idx}_pid_{pid}_...
+    /_pid_(\d+)_/i,                             // Generic PID
+    /(?:^|_)(\d{6,})(?:_|\.|$)/,                // Fallback for long numeric strings
+  ];
+
+  for (const pattern of patterns) {
+    const match = fileName.match(pattern);
+    if (match?.[1]) return match[1];
+  }
+
+  return null;
+}
+
+async function discoverDeteriorationFiles() {
+  deteriorationFileMap = new Map();
+  deteriorationIndex = new Map();
+
+  if (!fs.existsSync(DETERIORATION_DIR)) {
+    console.warn(`  ⚠ Deterioration directory not found: ${DETERIORATION_DIR}`);
+    return;
+  }
+
+  const files = fs.readdirSync(DETERIORATION_DIR).filter(f => f.toLowerCase().endsWith('.csv'));
+  const totalFiles = files.length;
+  console.log(`  📂 Pre-loading ${totalFiles} deterioration files into Memory Index...`);
+
+  const BATCH_SIZE = 100;
+  for (let i = 0; i < totalFiles; i += BATCH_SIZE) {
+    const batch = files.slice(i, i + BATCH_SIZE);
+    
+    await Promise.all(batch.map(async (fileName) => {
+      const patientId = extractPatientIdFromFilename(fileName);
+      if (!patientId) return;
+
+      const filePath = path.join(DETERIORATION_DIR, fileName);
+      deteriorationFileMap.set(patientId, filePath);
+
+      // Pre-load data rows directly into Memory Index
+      const rows = [];
+      await parseCSVStream(filePath, (row) => {
+        const horizon = toNumber(row.horizon);
+        const rowHourT = toNumber(row.hour_t);
+        const organRaw = row.organ ? String(row.organ) : '';
+        const organLower = organRaw.toLowerCase();
+        const organ = organLower.includes('cardio') ? 'cv' : organLower;
+        const finalOrgan = organ === 'cv' ? 'CV' : (organRaw.charAt(0).toUpperCase() + organRaw.slice(1));
+
+        rows.push({
+          patient_id: toNumber(row.patient_id),
+          hour_t: rowHourT,
+          horizon,
+          window_start_hour: toNumber(row.window_start_hour),
+          window_end_hour: toNumber(row.window_end_hour),
+          organ: finalOrgan,
+          current_sofa: toNumber(row.current_sofa),
+          future_max_sofa: toNumber(row.future_max_sofa),
+          pred_prob: toNumber(row.pred_prob),
+          true_label: toNumber(row.true_label),
+          pred_label: toNumber(row.pred_label),
+          threshold: toNumber(row.threshold),
+        });
+      }, true);
+
+      // Sort rows by time and organ for consistent snapshotting
+      rows.sort((a, b) => {
+        if (a.hour_t !== b.hour_t) return a.hour_t - b.hour_t;
+        return a.organ.localeCompare(b.organ);
+      });
+
+      deteriorationIndex.set(patientId, rows);
+
+      if (!patientIndex.has(patientId)) {
+        patientIndex.set(patientId, {
+          stay_id: patientId,
+          gender: 'N/A',
+          age: null,
+          admissiontype: 'Discovery',
+          icu_days: 0,
+          hospmort: null,
+        });
+      }
+    }));
+
+    if ((i + BATCH_SIZE) % 500 === 0 || (i + BATCH_SIZE) >= totalFiles) {
+      console.log(`    ...${Math.min(i + BATCH_SIZE, totalFiles)}/${totalFiles} files indexed`);
+    }
+  }
+
+  console.log(`  ✅ Deterioration Index READY: ${deteriorationIndex.size} patients cached.`);
+}
+
+function toNumber(value, fallback = null) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 // ─── Load all CSVs ───
@@ -169,14 +272,14 @@ export async function loadAllData() {
 
     if (predictionFiles.length > 0) {
       console.log(`  📂 Loading ${predictionFiles.length} prediction files (Parallel Batching) from src/...`);
-      
+
       const BATCH_SIZE = 100;
       let count = 0;
 
       for (let i = 0; i < predictionFiles.length; i += BATCH_SIZE) {
         const batch = predictionFiles.slice(i, i + BATCH_SIZE);
-        
-        await Promise.all(batch.map(file => 
+
+        await Promise.all(batch.map(file =>
           parseCSVStream(file, (row) => {
             const sid = normalizeId(row);
             if (!sid) return;
@@ -225,6 +328,9 @@ export async function loadAllData() {
     console.warn(`  ⚠ src/ directory not found for prediction files`);
   }
 
+  // 4. Reverse discovery for 2356 deterioration CSVs + Pre-loading
+  await discoverDeteriorationFiles();
+
   // Sort by hour_idx
   for (const [, arr] of vitalsIndex) arr.sort((a, b) => a.hour_idx - b.hour_idx);
   for (const [, arr] of sofaIndex) arr.sort((a, b) => a.hour_idx - b.hour_idx);
@@ -232,7 +338,7 @@ export async function loadAllData() {
   stayIds = [...patientIndex.keys()].sort();
   loadingComplete = true;
 
-  console.log(`\n✅ All data loaded. ${stayIds.length} patients, ${futureIndex.size} prediction entries.`);
+  console.log(`\n✅ All data loaded. ${stayIds.length} patients available, ${futureIndex.size} prediction entries.`);
   console.log(`   Memory: ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(0)} MB\n`);
 }
 
@@ -301,7 +407,7 @@ export function getPatientInsights(stayId, gap, hour) {
       const val = Number(pred[`pred_sofa_${org}`]);
       return sum + (isNaN(val) ? 0 : val);
     }, 0);
-    
+
     trueTotal = ORGANS.reduce((sum, org) => {
       const val = Number(pred[`true_sofa_${org}`]);
       return sum + (isNaN(val) ? 0 : val);
@@ -323,9 +429,9 @@ export function getPatientInsights(stayId, gap, hour) {
 
   const diff = predictedTotal != null ? (predictedTotal - actualTotal) : 0;
   let trendCode, trendLabel, trendColor, trendIcon;
-  if (diff > 0)      { trendCode = 1;  trendLabel = '惡化'; trendColor = '#EF4444'; trendIcon = '↑'; }
+  if (diff > 0) { trendCode = 1; trendLabel = '惡化'; trendColor = '#EF4444'; trendIcon = '↑'; }
   else if (diff < 0) { trendCode = -1; trendLabel = '改善'; trendColor = '#10B981'; trendIcon = '↓'; }
-  else               { trendCode = 0;  trendLabel = '穩定'; trendColor = '#64748B'; trendIcon = '→'; }
+  else { trendCode = 0; trendLabel = '穩定'; trendColor = '#64748B'; trendIcon = '→'; }
 
   let summary = '';
   if (trendCode === 1) {
@@ -350,6 +456,26 @@ export function getPatientInsights(stayId, gap, hour) {
     target_start_hour: pred ? Number(pred.target_start_hour) : null,
     target_end_hour: pred ? Number(pred.target_end_hour) : null,
     vitals: vitalsRow,
+  };
+}
+
+export async function getPatientDeterioration(stayId, gap, hour) {
+  const patientId = String(stayId);
+  const targetGap = gap !== undefined && gap !== null ? Number(gap) : null;
+  
+  // [極速 O(1) Memory Lookup]：不再讀取磁碟，直接從 Memory Map 取得快取陣列
+  const allRows = deteriorationIndex.get(patientId) || [];
+
+  if (targetGap === null) return allRows;
+
+  // 如果有指定 Gap (Horizon)，在記憶體中同步過濾
+  return allRows.filter(r => r.horizon === targetGap);
+}
+
+export function getDeteriorationManifest() {
+  return {
+    count: deteriorationFileMap.size,
+    patientIds: [...deteriorationFileMap.keys()].sort(),
   };
 }
 

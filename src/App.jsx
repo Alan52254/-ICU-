@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { fetchPatients, fetchPatientOverview, fetchPatientVitals, fetchPatientSofa, fetchPatientInsights, fetchHealth } from './lib/api';
+import { fetchPatients, fetchPatientOverview, fetchPatientVitals, fetchPatientSofa, fetchPatientInsights, fetchPatientDeterioration, fetchHealth } from './lib/api';
 import { getRiskLevel } from './lib/clinicalRules';
 import Header from './components/Header';
 import PatientOverview from './components/PatientOverview';
@@ -26,6 +26,7 @@ export default function App() {
   const [vitals, setVitals] = useState([]);
   const [sofaData, setSofaData] = useState([]);
   const [insights, setInsights] = useState(null);
+  const [deteriorationData, setDeteriorationData] = useState([]);
 
   // ─── UI state ───
   const [loading, setLoading] = useState(true);
@@ -59,7 +60,7 @@ export default function App() {
     fetchPatients()
       .then(list => {
         setPatients(list);
-        if (list.length > 0) setSelectedStayId(list[0].stay_id);
+        if (list.length > 0) setSelectedStayId(list[list.length - 1].stay_id);
       })
       .catch(e => setError(e.message));
   }, [serverReady]);
@@ -69,24 +70,27 @@ export default function App() {
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
 
   // Unified data loader
-  const loadPatientData = useCallback(async (stayId, gapVal, tw) => {
+  // [抗閃爍優化]：Deterioration 資料現在改由 App 一次性全量抓取 (不分 Gap)
+  const loadPatientData = useCallback(async (stayId, currentGap, tw) => {
     if (!stayId) return;
     setLoading(true);
     setError(null);
     try {
-      const [ov, vit, sofa] = await Promise.all([
+      const [ov, vit, sofa, det] = await Promise.all([
         fetchPatientOverview(stayId),
         fetchPatientVitals(stayId, tw),
-        fetchPatientSofa(stayId, gapVal),
+        fetchPatientSofa(stayId, currentGap),
+        fetchPatientDeterioration(stayId, currentGap), // follow the active forecast horizon
       ]);
       setOverview(ov);
       setVitals(vit);
       setSofaData(sofa);
+      setDeteriorationData(det);
 
       const initialHour = 0;
       setSelectedHour(initialHour);
 
-      const insRaw = await fetchPatientInsights(stayId, gapVal, initialHour);
+      const insRaw = await fetchPatientInsights(stayId, currentGap, initialHour);
       setInsights(normalizeInsights(insRaw));
     } catch (e) {
       setError(e.message);
@@ -94,6 +98,9 @@ export default function App() {
     setLoading(false);
   }, []);
 
+  // [抗閃爍重要變更]：資料抓取僅在「切換病人」或「切換 Gap (影響 SOFA/Insights)」時觸發。
+  // 但由於 Deterioration 已經一次性全量抓取，切換 Gap 時雖然會 re-fetch SOFA，
+  // 但後續 OrganRiskView 內部將使用過濾後的 deterorationData，實現無縫切換。
   useEffect(() => {
     loadPatientData(selectedStayId, gap, timeWindow);
   }, [selectedStayId, gap, timeWindow, loadPatientData]);
@@ -109,22 +116,18 @@ export default function App() {
     }
   }, [selectedStayId, gap]);
 
-  // 🏥 全域播放控制器 (Global Playback Timer)
+  // 全域播放控制器
   useEffect(() => {
     if (!isPlaying || !sofaData.length) return;
 
     const tickMs = 1000 / playbackSpeed;
     const timer = setInterval(() => {
-      // 找出當前 hour 在 sofaData 中的 index
       const maxIndex = sofaData.length - 1;
       const currentIndex = sofaData.findIndex(d => Number(d.hour_idx) === selectedHour);
       
       const nextIdx = currentIndex + 1;
       if (nextIdx <= maxIndex) {
         handleHourChange(sofaData[nextIdx].hour_idx);
-      } else {
-        // Keep playback active while pinning to the final hour.
-        return;
       }
     }, tickMs);
 
@@ -155,7 +158,7 @@ export default function App() {
     }
   };
 
-  // 1.2 建立 Dev Validator
+  // 建立 Dev Validator
   useEffect(() => {
     if (serverReady && overview && insights) {
       debugStateValidator(selectedStayId, selectedHour, gap, insights);
@@ -208,12 +211,10 @@ export default function App() {
           </div>
         ) : activeView === 'SOFA' ? (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* 左側邊欄 */}
             <div className="lg:col-span-3 space-y-5">
               <PatientOverview overview={overview} vitals={vitals} selectedHour={selectedHour} />
             </div>
 
-            {/* 中央主視覺 */}
             <div className="lg:col-span-6 space-y-5">
               <VitalsHero vitals={vitals} selectedHour={selectedHour} />
 
@@ -225,7 +226,6 @@ export default function App() {
                 onHourChange={handleHourChange}
                 selectedTarget={selectedTarget}
                 onTargetChange={setSelectedTarget}
-                // 全域播放器 Props
                 isPlaying={isPlaying}
                 playbackSpeed={playbackSpeed}
                 playbackActions={playbackActions}
@@ -238,7 +238,6 @@ export default function App() {
               />
             </div>
 
-            {/* 右側資訊卡 */}
             <div className="lg:col-span-3 space-y-5">
               <OrganBreakdown
                 insights={insights}
@@ -250,9 +249,10 @@ export default function App() {
           </div>
         ) : (
           <OrganRiskView 
-            sofaData={sofaData} 
             selectedHour={selectedHour} 
-            gap={gap} 
+            gap={gap}
+            selectedPatientId={selectedStayId}
+            rows={deteriorationData}
           />
         )}
 

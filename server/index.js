@@ -4,6 +4,7 @@ import {
   loadAllData, isReady,
   getPatientList, getPatientOverview,
   getPatientVitals, getPatientSofa, getPatientInsights,
+  getPatientDeterioration, getDeteriorationManifest,
 } from './csvLoader.js';
 
 const app = express();
@@ -12,8 +13,14 @@ const PORT = 3001;
 app.use(cors());
 app.use(express.json());
 
+// Health check must be reachable even while loading.
+app.get('/api/health', (req, res) => {
+  res.json({ status: isReady() ? 'ready' : 'loading', loading: !isReady() });
+});
+
 // Middleware: block requests until data is loaded
 app.use('/api', (req, res, next) => {
+  if (req.path === '/health') return next();
   if (!isReady()) return res.status(503).json({ error: 'Data still loading. Please wait...' });
   next();
 });
@@ -54,9 +61,22 @@ app.get('/api/patients/:stayId/insights', (req, res) => {
   res.json(data);
 });
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: isReady() ? 'ready' : 'loading', timestamp: new Date().toISOString() });
+// GET /api/patients/:stayId/deterioration?gap=4&hour=12
+app.get('/api/patients/:stayId/deterioration', async (req, res) => {
+  const gap = req.query.gap !== undefined ? parseInt(req.query.gap) : undefined;
+  const hour = req.query.hour !== undefined ? parseInt(req.query.hour) : undefined;
+  try {
+    const data = await getPatientDeterioration(req.params.stayId, gap, hour);
+    res.json(data);
+  } catch (err) {
+    console.error('Failed to read deterioration data:', err);
+    res.status(500).json({ error: 'Failed to read deterioration data' });
+  }
+});
+
+// GET /api/deterioration/manifest
+app.get('/api/deterioration/manifest', (req, res) => {
+  res.json(getDeteriorationManifest());
 });
 
 // ─── Start server ───
