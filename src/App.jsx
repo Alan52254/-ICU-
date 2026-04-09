@@ -11,6 +11,7 @@ import ClinicalInsights from './components/ClinicalInsights';
 import { Loader } from './components/Icons';
 import { normalizeInsights } from './lib/sofaDatasetAdapter';
 import { debugStateValidator } from './lib/dataHelper';
+import Footer from './components/Footer';
 import OrganRiskView from './components/clinical/OrganRiskView';
 
 export default function App() {
@@ -182,7 +183,7 @@ export default function App() {
   }
 
   return (
-    <div className={`min-h-screen bg-[#F0F4F8] text-slate-800 font-sans selection:bg-blue-200 ${isCritical ? 'critical-border-pulse' : ''}`}>
+    <div className={`min-h-screen flex flex-col bg-[#F0F4F8] text-slate-800 font-sans selection:bg-blue-200 ${isCritical ? 'critical-border-pulse' : ''}`}>
       <div className="accent-gradient-bar" />
 
       <Header
@@ -198,7 +199,8 @@ export default function App() {
         overview={overview}
       />
 
-      <main className="max-w-[1600px] mx-auto px-4 md:px-6 py-6">
+      <main className="max-w-[1600px] mx-auto px-4 md:px-6 py-6 flex-1">
+
         {error && (
           <div className="medical-card p-4 mb-6 border-red-200 bg-red-50 text-red-700 text-sm">
             {error === 'DATA_LOADING' ? '資料仍在載入中，請稍候重試...' : `錯誤: ${error}`}
@@ -262,6 +264,8 @@ export default function App() {
           </p>
         </div>
       </main>
+
+      <Footer />
     </div>
   );
 }

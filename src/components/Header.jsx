@@ -1,11 +1,42 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { GAP_WINDOWS, formatGender, formatAge } from '../lib/fieldMapping';
 import { Activity, ChevronDown, Clock } from './Icons';
+import PatientSearchBar from './PatientSearchBar';
 
 export default function Header({ patients, selectedStayId, onSelectPatient, gap, onGapChange, activeView, onViewChange, riskLevel, selectedHour, overview }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const currentPatient = patients.find(p => p.stay_id === selectedStayId);
+  // Filter patients based on search query
+  const filteredPatients = useMemo(() => {
+    if (!searchQuery) return patients;
+    return patients.filter(p => String(p.stay_id).includes(searchQuery));
+  }, [patients, searchQuery]);
+
+  const handlePatientSearchChange = (value) => {
+    setSearchQuery(value);
+
+    const exactMatch = patients.find(p => String(p.stay_id) === value);
+    if (exactMatch) {
+      onSelectPatient(exactMatch.stay_id);
+      setDropdownOpen(false);
+    }
+  };
+
+  const handlePatientSearch = (value) => {
+    const exactMatch = patients.find(p => String(p.stay_id) === value);
+    if (exactMatch) {
+      onSelectPatient(exactMatch.stay_id);
+      setDropdownOpen(false);
+      return;
+    }
+
+    const partialMatches = patients.filter(p => String(p.stay_id).includes(value));
+    if (partialMatches.length > 0) {
+      onSelectPatient(partialMatches[0].stay_id);
+      setDropdownOpen(false);
+    }
+  };
 
   return (
     <header className="frosted-header sticky top-0 z-50">
@@ -61,27 +92,49 @@ export default function Header({ patients, selectedStayId, onSelectPatient, gap,
             {/* Patient Selector */}
             <div className="relative">
               <button
-                onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm hover:border-blue-300 transition-all shadow-sm"
+                onClick={() => {
+                  setDropdownOpen(!dropdownOpen);
+                  if (!dropdownOpen) setSearchQuery(''); // reset search on open
+                }}
+                className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm hover:border-blue-300 transition-all shadow-sm focus:outline-none"
               >
                 <span className="font-mono font-bold text-slate-700 text-xs">{selectedStayId || '—'}</span>
                 <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
               </button>
               {dropdownOpen && (
-                <div className="absolute right-0 top-full mt-1 w-64 bg-white border border-slate-200 rounded-xl shadow-xl z-[100] max-h-80 overflow-y-auto">
-                  <div className="p-2 border-b border-slate-100">
-                    <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">選擇病人 ({patients.length})</span>
+                <div className="absolute right-0 top-full mt-1 w-64 bg-white border border-slate-200 rounded-xl shadow-xl z-[100] flex flex-col">
+                  {/* Pinned Search Input */}
+                  <div className="p-2 border-b border-slate-100 bg-slate-50 rounded-t-xl sticky top-0 z-[101]">
+                    <PatientSearchBar
+                      value={searchQuery}
+                      onChange={handlePatientSearchChange}
+                      onSearch={handlePatientSearch}
+                      placeholder="搜尋 Patient ID..."
+                      autoFocus
+                      compact
+                      showButton={false}
+                    />
                   </div>
-                  {patients.slice(0, 50).map(p => (
-                    <button
-                      key={p.stay_id}
-                      onClick={() => { onSelectPatient(p.stay_id); setDropdownOpen(false); }}
-                      className={`w-full text-left px-3 py-2 text-xs hover:bg-blue-50 transition-colors flex justify-between items-center ${p.stay_id === selectedStayId ? 'bg-blue-50 text-blue-700' : 'text-slate-600'}`}
-                    >
-                      <span className="font-mono font-semibold">{p.stay_id}</span>
-                      <span className="text-slate-400">{formatGender(p.gender)} • {formatAge(p.age)}y</span>
-                    </button>
-                  ))}
+
+                  {/* Scrollable List */}
+                  <div className="max-h-64 overflow-y-auto overflow-x-hidden">
+                    <div className="px-2 py-1.5 border-b border-slate-50 flex justify-between">
+                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider ml-1">選擇病人 ({filteredPatients.length})</span>
+                      {searchQuery && filteredPatients.length === 0 && (
+                        <span className="text-[10px] text-red-400 font-bold tracking-wider mr-1">無結果</span>
+                      )}
+                    </div>
+                    {filteredPatients.slice(0, 50).map(p => (
+                      <button
+                        key={p.stay_id}
+                        onClick={() => { onSelectPatient(p.stay_id); setDropdownOpen(false); }}
+                        className={`w-full text-left px-3 py-2 text-xs hover:bg-blue-50 transition-colors flex justify-between items-center ${p.stay_id === selectedStayId ? 'bg-blue-50 text-blue-700' : 'text-slate-600'}`}
+                      >
+                        <span className="font-mono font-semibold">{p.stay_id}</span>
+                        <span className="text-slate-400 whitespace-nowrap ml-2">{formatGender(p.gender)} • {formatAge(p.age)}y</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
