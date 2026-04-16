@@ -131,7 +131,7 @@ export default function OrganRiskView({ selectedHour, gap, selectedPatientId, ro
         <div className="medical-card flex min-h-[550px] flex-col p-6">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h3 className="text-[17px] font-bold tracking-tight text-slate-800">AI器官惡化機率預測</h3>
+              <h3 className="text-[17px] font-bold tracking-tight text-slate-800">SADG-MT器官惡化發生機率預測</h3>
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
                 Risk Prediction Registry
               </p>
