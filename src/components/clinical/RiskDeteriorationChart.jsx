@@ -110,7 +110,7 @@ function CustomTooltip({ active, payload, label, selectedHour }) {
       {isFuture ? (
         <div className="space-y-1.5">
           <div className="flex items-center justify-between gap-4">
-            <span className="text-slate-500">惡化機率</span>
+            <span className="text-slate-500">惡化發生機率</span>
             <span className="font-mono font-bold text-orange-600">
               {row.future_pred != null ? row.future_pred.toFixed(4) : '-'}
             </span>
@@ -162,12 +162,12 @@ export default function RiskDeteriorationChart({ rows = [], selectedHour, select
       {/* 頂部標籤區 */}
       <div className="flex items-center justify-between px-1 mb-3">
         <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-bold shadow-sm">
-          <span className="text-slate-500">{organLabel}器官惡化趨勢圖</span>
+          <span className="text-slate-500">{organLabel}器官惡化發生趨勢圖</span>
         </div>
         <div className="flex items-center gap-3 rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-bold shadow-sm">
           <span className="flex items-center gap-1 text-orange-600">
             <span className="h-0 w-4 border-t-2 border-dashed border-orange-500" />
-            惡化機率
+            惡化發生機率
           </span>
           <span className="flex items-center gap-1 text-emerald-600">
             <span className="h-0 w-4 border-t-2 border-dashed border-emerald-500" />

@@ -75,7 +75,7 @@ export default function OrganRiskView({ selectedHour, gap, selectedPatientId, ro
               </div>
               <div>
                 <h2 className="text-xl font-bold tracking-tight text-slate-800">
-                  {getOrganLabel(selectedOrgan)}器官惡化趨勢圖
+                  {getOrganLabel(selectedOrgan)}器官惡化發生趨勢圖
                 </h2>
                 <div className="mt-1 mb-4 flex items-center gap-2">
                   <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-slate-400">
@@ -94,11 +94,10 @@ export default function OrganRiskView({ selectedHour, gap, selectedPatientId, ro
                       <button
                         key={`tab-${item.key}`}
                         onClick={() => setSelectedOrgan(item.key)}
-                        className={`rounded-full px-4 py-1.5 text-xs font-bold transition-all duration-300 ${
-                          isTabActive
+                        className={`rounded-full px-4 py-1.5 text-xs font-bold transition-all duration-300 ${isTabActive
                             ? 'scale-105 bg-indigo-600 text-white shadow-md'
                             : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700'
-                        }`}
+                          }`}
                       >
                         {item.label}
                       </button>

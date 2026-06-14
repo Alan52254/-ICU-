@@ -61,7 +61,7 @@ function OrganCard({ organLabel, data, isSelected, onClick }) {
       <div className="mb-2 flex items-start justify-between">
         <div className="flex flex-col">
           <span className={`text-[13px] font-bold ${isSelected ? 'text-indigo-700' : 'text-slate-700'}`}>{organLabel}</span>
-          <span className="text-[10px] font-mono uppercase tracking-tight text-slate-400">惡化機率</span>
+          <span className="text-[10px] font-mono uppercase tracking-tight text-slate-400">惡化發生機率</span>
         </div>
         <div className={`text-right text-[17px] font-mono font-black ${isCritical ? 'text-rose-600' : 'text-orange-500'}`}>
           {formatProbability(predProb)}
